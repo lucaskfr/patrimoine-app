@@ -216,7 +216,7 @@ function showOnboarding() {
       <p class="hint" style="margin-bottom:14px;">${TYPE_LABELS[acc.type]}</p>
       <div class="field">
         <label>Solde actuel</label>
-        <input type="number" step="0.01" class="ob-balance-input" data-index="${i}" placeholder="0.00" required>
+        <input type="number" step="0.01" class="ob-balance-input" data-index="${i}" placeholder="0.00">
       </div>
     `;
     form.appendChild(step);
@@ -230,8 +230,7 @@ function showOnboarding() {
       ? "Commencer le suivi" : "Suivant";
   }
 
-  document.getElementById("onboarding-form").onsubmit = async (e) => {
-    e.preventDefault();
+  document.getElementById("ob-submit").onclick = async () => {
     const errEl = document.getElementById("ob-error");
     errEl.style.display = "none";
 
