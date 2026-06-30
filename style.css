@@ -292,6 +292,59 @@ main {
 .account-card.expanded .mini-history { display: block; }
 .mini-history { display: none; margin-top: 14px; border-top: 1px dashed var(--paper-line); padding-top: 10px; }
 
+/* ---------------- Crypto ---------------- */
+
+.crypto-box {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--paper-line);
+}
+.crypto-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.crypto-row select {
+  flex: 1 1 160px;
+  padding: 7px 9px;
+  border: 1px solid var(--paper-line);
+  border-radius: 6px;
+  background: #fffefb;
+  font-size: 0.82rem;
+}
+.crypto-row input {
+  flex: 1 1 120px;
+  padding: 7px 9px;
+  border: 1px solid var(--paper-line);
+  border-radius: 6px;
+  background: #fffefb;
+  font-size: 0.82rem;
+  font-family: var(--font-mono);
+}
+.crypto-meta {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---------------- Plafonds réglementés ---------------- */
+
+.cap-gauge { margin-top: 10px; }
+.cap-gauge-bar-wrap {
+  height: 8px;
+  background: var(--parchment-dark);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cap-gauge-bar { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.cap-gauge-labels {
+  display: flex; justify-content: space-between;
+  font-size: 0.76rem; color: var(--ink-soft); margin-top: 4px;
+}
+.cap-gauge-labels .cap-warning { color: var(--gold); font-weight: 600; }
+.cap-gauge-labels .cap-alert { color: var(--rust); font-weight: 600; }
+
 /* ---------------- Buttons ---------------- */
 
 .btn {
