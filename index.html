@@ -207,6 +207,21 @@
   </div>
 </div>
 
+<!-- ===================== MODAL : confirmation ===================== -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal" style="max-width:360px;">
+    <div class="modal-head">
+      <h3 id="confirm-title">Confirmer</h3>
+      <button class="modal-close" id="confirm-close">&times;</button>
+    </div>
+    <p id="confirm-message" style="margin:0 0 18px; color:var(--ink-soft);"></p>
+    <div style="display:flex; gap:10px;">
+      <button type="button" class="btn btn-outline btn-block" id="confirm-cancel">Annuler</button>
+      <button type="button" class="btn btn-danger btn-block" id="confirm-ok" style="background:var(--rust); color:#fff;">Supprimer</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>

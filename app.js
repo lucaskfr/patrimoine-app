@@ -722,8 +722,32 @@ document.getElementById("mv-delete").addEventListener("click", async () => {
   closeMovementModal();
 });
 
+function confirmDialog(message) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("confirm-modal");
+    document.getElementById("confirm-message").textContent = message;
+    overlay.classList.add("open");
+    const cleanup = (result) => {
+      overlay.classList.remove("open");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      closeBtn.removeEventListener("click", onCancel);
+      resolve(result);
+    };
+    const okBtn = document.getElementById("confirm-ok");
+    const cancelBtn = document.getElementById("confirm-cancel");
+    const closeBtn = document.getElementById("confirm-close");
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    closeBtn.addEventListener("click", onCancel);
+  });
+}
+
 async function deleteMovement(id) {
-  if (!confirm("Supprimer ce mouvement ?")) return;
+  const confirmed = await confirmDialog("Supprimer ce mouvement ? Cette action est définitive.");
+  if (!confirmed) return;
   const { error } = await sb.from("movements").delete().eq("id", id);
   if (error) { showToast("Erreur lors de la suppression.", true); return; }
   state.movements = state.movements.filter(m => m.id !== id);
