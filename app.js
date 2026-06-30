@@ -1102,6 +1102,234 @@ mvForm.addEventListener("submit", async (e) => {
 });
 
 /* ---------------------------------------------------------- */
+/*  Coach IA (Supabase Edge Function) + Rapport PDF               */
+/* ---------------------------------------------------------- */
+
+function buildFinancialSummary() {
+  const total = totalPatrimoine();
+  const startMonth = startOfMonth(new Date()).toISOString().slice(0, 10);
+  const totalStartOfMonth = state.accounts.reduce((sum, a) => {
+    const balanceBefore = state.movements
+      .filter(m => m.account_id === a.id && m.date < startMonth)
+      .reduce((s, m) => s + Number(m.amount), 0);
+    return sum + balanceBefore;
+  }, 0);
+
+  const repartition = state.accounts.map(a => ({
+    name: a.name, type: a.type, balance: Math.round(accountBalance(a.id) * 100) / 100,
+  }));
+
+  const acc = courantAccount();
+  const monthExpensesByCategory = {};
+  if (acc) {
+    state.movements
+      .filter(m => m.account_id === acc.id && Number(m.amount) < 0 && !m.is_initial && isSameMonth(m.date, new Date()))
+      .forEach(m => {
+        const cat = m.category || "Autre";
+        monthExpensesByCategory[cat] = Math.round(((monthExpensesByCategory[cat] || 0) + Math.abs(Number(m.amount))) * 100) / 100;
+      });
+  }
+
+  const ctx = computeStreakContext();
+
+  const capsStatus = Object.entries(REGULATED_CAPS).map(([name, cap]) => {
+    const a = state.accounts.find(x => x.name === name);
+    if (!a) return null;
+    const bal = accountBalance(a.id);
+    return { name, balance: Math.round(bal * 100) / 100, cap, pctUsed: Math.round((bal / cap) * 1000) / 10 };
+  }).filter(Boolean);
+
+  return {
+    totalPatrimoine: Math.round(total * 100) / 100,
+    deltaVsStartOfMonth: Math.round((total - totalStartOfMonth) * 100) / 100,
+    repartition,
+    monthExpensesByCategory,
+    streakMonths: ctx.streak,
+    capsStatus,
+  };
+}
+
+function localFallbackSummary(summary) {
+  const deltaTxt = summary.deltaVsStartOfMonth >= 0
+    ? `en hausse de ${formatEUR(summary.deltaVsStartOfMonth)}`
+    : `en baisse de ${formatEUR(Math.abs(summary.deltaVsStartOfMonth))}`;
+  const topCat = Object.entries(summary.monthExpensesByCategory).sort((a, b) => b[1] - a[1])[0];
+  const expensesTxt = topCat
+    ? `Vos dépenses du mois sont principalement concentrées sur la catégorie ${topCat[0]} (${formatEUR(topCat[1])}).`
+    : "Aucune dépense enregistrée ce mois-ci sur le compte courant.";
+  const nearCap = summary.capsStatus.find(c => c.pctUsed >= 90);
+  const capTxt = nearCap ? ` Attention, votre ${nearCap.name} est à ${nearCap.pctUsed}% de son plafond.` : "";
+  return `Votre patrimoine total s'élève à ${formatEUR(summary.totalPatrimoine)}, ${deltaTxt} depuis le début du mois. ${expensesTxt}${capTxt} Votre streak d'épargne est actuellement de ${summary.streakMonths} mois consécutifs.`;
+}
+
+async function callCoach(summary) {
+  const url = `${window.SUPABASE_CONFIG.url}/functions/v1/coach`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": window.SUPABASE_CONFIG.anonKey,
+      "Authorization": `Bearer ${state.session?.access_token || window.SUPABASE_CONFIG.anonKey}`,
+    },
+    body: JSON.stringify({ summary }),
+  });
+  if (!res.ok) throw new Error(`Coach indisponible (HTTP ${res.status})`);
+  const data = await res.json();
+  if (!data.analysis) throw new Error("Réponse du coach invalide");
+  return data.analysis;
+}
+
+async function getCoachAnalysisOrFallback() {
+  const summary = buildFinancialSummary();
+  try {
+    const analysis = await callCoach(summary);
+    return { text: analysis, source: "ia" };
+  } catch (err) {
+    console.warn("Coach IA indisponible, utilisation du résumé local :", err.message);
+    return { text: localFallbackSummary(summary), source: "local" };
+  }
+}
+
+document.getElementById("coach-analyze-btn").addEventListener("click", async () => {
+  const card = document.getElementById("coach-result-card");
+  const content = document.getElementById("coach-result-content");
+  card.style.display = "block";
+  content.innerHTML = `<span class="coach-loading">Analyse en cours…</span>`;
+  const { text, source } = await getCoachAnalysisOrFallback();
+  content.textContent = text;
+  if (source === "local") {
+    content.innerHTML += `<div class="hint" style="margin-top:10px;">Analyse locale (le coach IA n'est pas encore configuré ou est temporairement indisponible).</div>`;
+  }
+});
+
+document.getElementById("generate-report-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("generate-report-btn");
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = "Génération en cours…";
+  try {
+    await generateMonthlyReportPDF();
+    showToast("Rapport PDF généré.");
+  } catch (err) {
+    console.error(err);
+    showToast("Erreur lors de la génération du rapport.", true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
+
+async function generateMonthlyReportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 18;
+  let y = 0;
+
+  const NAVY = [10, 37, 64];
+  const GOLD = [176, 141, 46];
+  const SAGE = [92, 122, 92];
+  const RUST = [164, 80, 43];
+  const INK = [28, 43, 58];
+
+  const summary = buildFinancialSummary();
+  const { text: aiText } = await getCoachAnalysisOrFallback();
+
+  // En-tête
+  doc.setFillColor(...NAVY);
+  doc.rect(0, 0, pageWidth, 32, "F");
+  doc.setTextColor(...GOLD);
+  doc.setFont("times", "bold");
+  doc.setFontSize(20);
+  doc.text("Patrimoine — Rapport mensuel", margin, 16);
+  doc.setTextColor(245, 240, 225);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(capitalize(monthLabel(new Date())) + " · généré le " + new Date().toLocaleDateString("fr-FR"), margin, 24);
+
+  y = 44;
+  doc.setTextColor(...INK);
+
+  // Patrimoine total
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("Patrimoine total", margin, y);
+  y += 8;
+  doc.setFont("courier", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(...NAVY);
+  doc.text(formatEUR(summary.totalPatrimoine), margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(summary.deltaVsStartOfMonth >= 0 ? SAGE[0] : RUST[0], summary.deltaVsStartOfMonth >= 0 ? SAGE[1] : RUST[1], summary.deltaVsStartOfMonth >= 0 ? SAGE[2] : RUST[2]);
+  doc.text(
+    `${summary.deltaVsStartOfMonth >= 0 ? "+" : ""}${formatEUR(summary.deltaVsStartOfMonth)} depuis le début du mois`,
+    margin + 70, y
+  );
+  y += 12;
+
+  // Répartition par compte
+  doc.setTextColor(...INK);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("Répartition par compte", margin, y);
+  y += 7;
+  doc.setFontSize(10);
+  summary.repartition.forEach(r => {
+    doc.setFont("helvetica", "normal");
+    doc.text(r.name, margin, y);
+    doc.setFont("courier", "normal");
+    doc.text(formatEUR(r.balance), pageWidth - margin, y, { align: "right" });
+    y += 6;
+  });
+  y += 6;
+
+  // Dépenses par catégorie
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("Dépenses du mois par catégorie", margin, y);
+  y += 7;
+  doc.setFontSize(10);
+  const catEntries = Object.entries(summary.monthExpensesByCategory);
+  if (catEntries.length === 0) {
+    doc.setFont("helvetica", "italic");
+    doc.text("Aucune dépense enregistrée ce mois-ci.", margin, y);
+    y += 6;
+  } else {
+    catEntries.sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => {
+      doc.setFont("helvetica", "normal");
+      doc.text(cat, margin, y);
+      doc.setFont("courier", "normal");
+      doc.text(formatEUR(val), pageWidth - margin, y, { align: "right" });
+      y += 6;
+    });
+  }
+  y += 6;
+
+  // Streak
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("Streak d'épargne", margin, y);
+  y += 7;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`${summary.streakMonths} mois consécutifs d'épargne en hausse (hors compte courant).`, margin, y);
+  y += 12;
+
+  // Analyse du coach
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("Analyse du coach", margin, y);
+  y += 7;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  const lines = doc.splitTextToSize(aiText, pageWidth - margin * 2);
+  doc.text(lines, margin, y);
+
+  doc.save(`rapport-patrimoine-${todayISO()}.pdf`);
+}
+
+/* ---------------------------------------------------------- */
 /*  Init                                                          */
 /* ---------------------------------------------------------- */
 

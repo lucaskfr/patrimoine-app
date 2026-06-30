@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#0a2540">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" href="icon.png">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -87,6 +87,16 @@
       <div class="card">
         <div class="card-title">Jalons</div>
         <div class="badges-grid" id="badges-grid"></div>
+      </div>
+
+      <div class="card-actions-row">
+        <button type="button" class="btn btn-outline" id="generate-report-btn">📄 Générer le rapport du mois</button>
+        <button type="button" class="btn btn-outline" id="coach-analyze-btn">🧭 Analyser mes finances</button>
+      </div>
+
+      <div class="card" id="coach-result-card" style="display:none;">
+        <div class="card-title">Analyse du coach IA</div>
+        <div id="coach-result-content"></div>
       </div>
 
       <div class="grid-2">
@@ -257,8 +267,9 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
