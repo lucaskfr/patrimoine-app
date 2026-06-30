@@ -343,6 +343,97 @@ function renderDashboard() {
   renderRepartitionChart();
   renderEvolutionChart();
   renderRecentMovements();
+  renderStreakAndBadges();
+}
+
+/* ---------------------------------------------------------- */
+/*  Streak d'épargne & jalons                                    */
+/* ---------------------------------------------------------- */
+
+function nonCourantBalanceAsOf(dateStr) {
+  return state.accounts
+    .filter(a => a.type !== "courant")
+    .reduce((sum, a) => {
+      const bal = state.movements
+        .filter(m => m.account_id === a.id && m.date <= dateStr)
+        .reduce((s, m) => s + Number(m.amount), 0);
+      return sum + bal;
+    }, 0);
+}
+
+function computeMonthlySeries() {
+  const allDates = state.movements.map(m => m.date);
+  if (allDates.length === 0) return [];
+  const minDate = allDates.reduce((a, b) => (a < b ? a : b));
+  const start = startOfMonth(new Date(minDate + "T00:00:00"));
+  const end = startOfMonth(new Date());
+  const months = [];
+  let cur = start;
+  while (cur <= end) {
+    months.push(new Date(cur));
+    cur = addMonths(cur, 1);
+  }
+  return months.map(m => {
+    const lastDayOfMonth = new Date(m.getFullYear(), m.getMonth() + 1, 0).toISOString().slice(0, 10);
+    const cappedDate = lastDayOfMonth > todayISO() ? todayISO() : lastDayOfMonth;
+    return { month: m, total: nonCourantBalanceAsOf(cappedDate) };
+  });
+}
+
+const BADGE_DEFS = [
+  { id: "first-positive", icon: "🌱", title: "Premier mois positif", check: (ctx) => ctx.everPositiveMonth },
+  { id: "three-streak", icon: "🔥", title: "3 mois d'affilée", check: (ctx) => ctx.maxStreak >= 3 },
+  { id: "doubled", icon: "🚀", title: "Patrimoine doublé", check: (ctx) => ctx.doubled },
+  { id: "livret-a-cap", icon: "🏆", title: "Plafond Livret A atteint", check: (ctx) => ctx.livretACapped },
+];
+
+function computeStreakContext() {
+  const series = computeMonthlySeries();
+  let streak = 0;
+  for (let i = series.length - 1; i >= 1; i--) {
+    if (series[i].total > series[i - 1].total) streak++;
+    else break;
+  }
+  let maxStreak = 0, running = 0;
+  for (let i = 1; i < series.length; i++) {
+    if (series[i].total > series[i - 1].total) { running++; maxStreak = Math.max(maxStreak, running); }
+    else running = 0;
+  }
+  const everPositiveMonth = series.some((s, i) => i > 0 && s.total > series[i - 1].total);
+
+  const allDates = state.movements.map(m => m.date).sort();
+  let doubled = false;
+  if (allDates.length > 0) {
+    const firstDate = allDates[0];
+    const firstTotal = state.accounts.reduce((sum, a) => {
+      const bal = state.movements
+        .filter(m => m.account_id === a.id && m.date <= firstDate)
+        .reduce((s, m) => s + Number(m.amount), 0);
+      return sum + bal;
+    }, 0);
+    if (firstTotal > 0) doubled = totalPatrimoine() >= firstTotal * 2;
+  }
+
+  const livretA = state.accounts.find(a => a.name === "Livret A");
+  const livretACapped = livretA ? accountBalance(livretA.id) >= REGULATED_CAPS["Livret A"] : false;
+
+  return { streak, maxStreak, everPositiveMonth, doubled, livretACapped };
+}
+
+function renderStreakAndBadges() {
+  const ctx = computeStreakContext();
+  document.getElementById("streak-value").textContent = `${ctx.streak} mois`;
+
+  const grid = document.getElementById("badges-grid");
+  grid.innerHTML = BADGE_DEFS.map(b => {
+    const unlocked = b.check(ctx);
+    return `
+      <div class="badge ${unlocked ? "unlocked" : "locked"}">
+        <span class="badge-icon">${b.icon}</span>
+        <span class="badge-title">${b.title}</span>
+      </div>
+    `;
+  }).join("");
 }
 
 function renderRepartitionChart() {
