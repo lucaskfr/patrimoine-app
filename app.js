@@ -37,6 +37,7 @@ let state = {
   movements: [],
   currentView: "dashboard",
   expenseCursor: startOfMonth(new Date()),
+  heatmapYear: new Date().getFullYear(),
   charts: {},
   editingMovementId: null,
 };
@@ -777,6 +778,7 @@ function renderExpenses() {
   }
 
   renderTrendChart(acc);
+  renderHeatmap(acc);
 
   const listEl = document.getElementById("exp-list");
   const sorted = [...monthExpenses].sort((a, b) => b.date.localeCompare(a.date));
@@ -828,6 +830,64 @@ function renderTrendChart(acc) {
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ---------------------------------------------------------- */
+/*  Heatmap annuelle des dépenses                                */
+/* ---------------------------------------------------------- */
+
+document.getElementById("heatmap-prev-year").addEventListener("click", () => {
+  state.heatmapYear -= 1;
+  renderExpenses();
+});
+document.getElementById("heatmap-next-year").addEventListener("click", () => {
+  state.heatmapYear += 1;
+  renderExpenses();
+});
+
+function renderHeatmap(acc) {
+  document.getElementById("heatmap-year-label").textContent = state.heatmapYear;
+
+  const dailyTotals = {};
+  state.movements
+    .filter(m => m.account_id === acc.id && Number(m.amount) < 0 && !m.is_initial && m.date.startsWith(String(state.heatmapYear)))
+    .forEach(m => {
+      dailyTotals[m.date] = (dailyTotals[m.date] || 0) + Math.abs(Number(m.amount));
+    });
+
+  const values = Object.values(dailyTotals).filter(v => v > 0).sort((a, b) => a - b);
+  const q = (p) => values.length ? values[Math.min(values.length - 1, Math.floor(p * values.length))] : 0;
+  const t1 = q(0.25), t2 = q(0.5), t3 = q(0.75);
+
+  function bucket(v) {
+    if (!v) return 0;
+    if (v <= t1) return 1;
+    if (v <= t2) return 2;
+    if (v <= t3) return 3;
+    return 4;
+  }
+
+  const start = new Date(state.heatmapYear, 0, 1);
+  const end = new Date(state.heatmapYear, 11, 31);
+  // On démarre la grille un dimanche pour aligner les colonnes par semaine
+  const gridStart = new Date(start);
+  gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+
+  const cells = [];
+  for (let d = new Date(gridStart); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().slice(0, 10);
+    const inYear = d.getFullYear() === state.heatmapYear;
+    const val = dailyTotals[dateStr] || 0;
+    cells.push({ dateStr, val, inYear, level: inYear ? bucket(val) : -1 });
+  }
+
+  const wrap = document.getElementById("heatmap-wrap");
+  wrap.innerHTML = `<div class="heatmap-grid">` +
+    cells.map(c => c.inYear
+      ? `<div class="heat-day heat-${c.level}" title="${formatDateLong(c.dateStr)} : ${formatEUR(c.val)}"></div>`
+      : `<div class="heat-day" style="visibility:hidden;"></div>`
+    ).join("") +
+    `</div>`;
+}
 
 /* ---------------------------------------------------------- */
 /*  Journal                                                       */

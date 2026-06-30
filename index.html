@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#0a2540">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" href="icon.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -142,6 +142,25 @@
         <div class="card-title">Dépenses du mois</div>
         <div id="exp-list"></div>
       </div>
+
+      <div class="card">
+        <div class="card-title">Calendrier des dépenses</div>
+        <div class="heatmap-year-switcher">
+          <button id="heatmap-prev-year">‹</button>
+          <span class="month-label" id="heatmap-year-label"></span>
+          <button id="heatmap-next-year">›</button>
+        </div>
+        <div id="heatmap-wrap"></div>
+        <div class="heatmap-legend">
+          <span>Moins</span>
+          <span class="heat-swatch heat-0"></span>
+          <span class="heat-swatch heat-1"></span>
+          <span class="heat-swatch heat-2"></span>
+          <span class="heat-swatch heat-3"></span>
+          <span class="heat-swatch heat-4"></span>
+          <span>Plus</span>
+        </div>
+      </div>
     </section>
 
     <!-- ---------- JOURNAL ---------- -->
@@ -240,6 +259,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
