@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Patrimoine</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Patrimoine">
+<meta name="theme-color" content="#0a2540">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="loading" class="loading-screen">Patrimoine — chargement…</div>
+
+<!-- ===================== AUTH SCREEN ===================== -->
+<div id="auth-screen" class="centered-screen" style="display:none;">
+  <div class="auth-card">
+    <h1>📒 Patrimoine</h1>
+    <p class="subtitle">Votre carnet d'épargne personnel</p>
+    <div class="auth-tabs">
+      <button id="tab-login" class="active" type="button">Connexion</button>
+      <button id="tab-signup" type="button">Créer un compte</button>
+    </div>
+    <form id="auth-form">
+      <div class="field">
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" autocomplete="email" required>
+      </div>
+      <div class="field">
+        <label for="auth-password">Mot de passe</label>
+        <input id="auth-password" type="password" autocomplete="current-password" required minlength="6">
+      </div>
+      <div id="auth-error" class="error-msg" style="display:none;"></div>
+      <div id="auth-info" class="hint" style="display:none;"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="auth-submit">Se connecter</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== ONBOARDING ===================== -->
+<div id="onboarding-screen" class="centered-screen" style="display:none;">
+  <div class="onboarding-card">
+    <h1>Bienvenue 👋</h1>
+    <p class="subtitle">Indiquez le solde actuel de chacun de vos comptes pour démarrer votre suivi.</p>
+    <div class="onboarding-progress" id="ob-progress"></div>
+    <form id="onboarding-form"></form>
+    <div id="ob-error" class="error-msg" style="display:none;"></div>
+    <button type="submit" form="onboarding-form" class="btn btn-gold btn-block" id="ob-submit">Commencer le suivi</button>
+  </div>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div id="app">
+  <div class="topbar">
+    <div class="brand"><span class="mark">📒</span> Patrimoine</div>
+    <button class="logout-btn" id="logout-btn">Déconnexion</button>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-view="dashboard"><span class="icon">🏛️</span><span>Tableau de bord</span></button>
+    <button class="nav-btn" data-view="accounts"><span class="icon">💰</span><span>Comptes</span></button>
+    <button class="nav-btn" data-view="expenses"><span class="icon">🧾</span><span>Dépenses</span></button>
+    <button class="nav-btn" data-view="journal"><span class="icon">📜</span><span>Journal</span></button>
+  </nav>
+
+  <main>
+    <!-- ---------- DASHBOARD ---------- -->
+    <section id="view-dashboard" class="view active">
+      <div class="total-card">
+        <div class="label">Patrimoine total</div>
+        <div class="value amount" id="db-total">0,00 €</div>
+        <div class="sub" id="db-trend"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Répartition par compte</div>
+          <div class="chart-wrap"><canvas id="chart-repartition"></canvas></div>
+          <ul class="legend-list" id="legend-repartition"></ul>
+        </div>
+        <div class="card">
+          <div class="card-title">Évolution du patrimoine</div>
+          <div class="chart-wrap"><canvas id="chart-evolution"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Derniers mouvements</div>
+        <div id="db-recent"></div>
+      </div>
+    </section>
+
+    <!-- ---------- COMPTES ---------- -->
+    <section id="view-accounts" class="view">
+      <h2 style="margin-bottom:14px;">Mes comptes</h2>
+      <div id="accounts-list"></div>
+    </section>
+
+    <!-- ---------- DEPENSES ---------- -->
+    <section id="view-expenses" class="view">
+      <h2 style="margin-bottom:14px;">Dépenses — Compte Courant</h2>
+      <div class="month-switcher">
+        <button id="exp-prev">‹</button>
+        <span class="month-label" id="exp-month-label"></span>
+        <button id="exp-next">›</button>
+      </div>
+
+      <div class="total-card" style="background:linear-gradient(135deg, var(--rust) 0%, #7a3a1f 100%);">
+        <div class="label">Total dépensé ce mois</div>
+        <div class="value amount" id="exp-total">0,00 €</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Par catégorie</div>
+          <div id="exp-by-category"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Tendance (6 derniers mois)</div>
+          <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Dépenses du mois</div>
+        <div id="exp-list"></div>
+      </div>
+    </section>
+
+    <!-- ---------- JOURNAL ---------- -->
+    <section id="view-journal" class="view">
+      <h2 style="margin-bottom:14px;">Journal des mouvements</h2>
+      <div class="filter-bar">
+        <select id="journal-filter-account">
+          <option value="">Tous les comptes</option>
+        </select>
+      </div>
+      <div class="card" id="journal-list-card">
+        <div id="journal-list"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ===================== MODAL : mouvement ===================== -->
+<div class="modal-overlay" id="movement-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="mv-modal-title">Ajouter un mouvement</h3>
+      <button class="modal-close" id="mv-modal-close">&times;</button>
+    </div>
+    <form id="movement-form">
+      <input type="hidden" id="mv-id">
+      <div class="field" id="mv-account-field">
+        <label for="mv-account">Compte</label>
+        <select id="mv-account" required></select>
+      </div>
+
+      <div class="field" id="mv-type-field">
+        <label>Type de mouvement</label>
+        <div class="toggle-group">
+          <button type="button" class="active in" data-mv-type="in">Versement / Entrée</button>
+          <button type="button" data-mv-type="out">Retrait / Dépense</button>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field amount-field">
+          <label for="mv-amount">Montant (€)</label>
+          <input id="mv-amount" type="number" step="0.01" min="0" required>
+        </div>
+        <div class="field">
+          <label for="mv-date">Date</label>
+          <input id="mv-date" type="date" required>
+        </div>
+      </div>
+
+      <div class="field" id="mv-category-field" style="display:none;">
+        <label for="mv-category">Catégorie</label>
+        <select id="mv-category">
+          <option>Logement</option>
+          <option>Alimentation</option>
+          <option>Transport</option>
+          <option>Loisirs</option>
+          <option>Abonnements</option>
+          <option>Santé</option>
+          <option>Autre</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="mv-note">Note (optionnel)</label>
+        <input id="mv-note" type="text" maxlength="140" placeholder="ex : Salaire juin, Courses Carrefour…">
+      </div>
+
+      <div id="mv-error" class="error-msg" style="display:none;"></div>
+
+      <div style="display:flex; gap:10px; margin-top:6px;">
+        <button type="button" class="btn btn-danger" id="mv-delete" style="display:none;">Supprimer</button>
+        <button type="submit" class="btn btn-primary btn-block" id="mv-submit">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
