@@ -7,7 +7,7 @@
 /*  Setup                                                       */
 /* ---------------------------------------------------------- */
 
-const supabase = window.supabase.createClient(
+const sb = window.supabase.createClient(
   window.SUPABASE_CONFIG.url,
   window.SUPABASE_CONFIG.anonKey
 );
@@ -119,10 +119,10 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
 
   try {
     if (authMode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) throw error;
     } else {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await sb.auth.signUp({ email, password });
       if (error) throw error;
       if (data.session === null) {
         infoEl.textContent = "Compte créé ! Vérifiez votre boîte mail et cliquez sur le lien de confirmation, puis revenez vous connecter ici.";
@@ -147,10 +147,10 @@ function translateAuthError(msg) {
 }
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
-  await supabase.auth.signOut();
+  await sb.auth.signOut();
 });
 
-supabase.auth.onAuthStateChange((event, session) => {
+sb.auth.onAuthStateChange((event, session) => {
   state.session = session;
   if (session) {
     boot();
@@ -171,8 +171,8 @@ async function boot() {
   document.getElementById("loading").style.display = "flex";
 
   const [{ data: accounts, error: accErr }, { data: movements, error: movErr }] = await Promise.all([
-    supabase.from("accounts").select("*").order("sort_order"),
-    supabase.from("movements").select("*").order("date", { ascending: false }),
+    sb.from("accounts").select("*").order("sort_order"),
+    sb.from("movements").select("*").order("date", { ascending: false }),
   ]);
 
   if (accErr || movErr) {
@@ -258,7 +258,7 @@ function showOnboarding() {
       const accountsToInsert = DEFAULT_ACCOUNTS.map(a => ({
         user_id: userId, name: a.name, type: a.type, color: a.color, sort_order: a.sort_order,
       }));
-      const { data: inserted, error: insErr } = await supabase.from("accounts").insert(accountsToInsert).select();
+      const { data: inserted, error: insErr } = await sb.from("accounts").insert(accountsToInsert).select();
       if (insErr) throw insErr;
 
       const movementsToInsert = inserted.map((acc, i) => ({
@@ -270,7 +270,7 @@ function showOnboarding() {
         note: "Solde initial",
         is_initial: true,
       }));
-      const { error: movErr } = await supabase.from("movements").insert(movementsToInsert);
+      const { error: movErr } = await sb.from("movements").insert(movementsToInsert);
       if (movErr) throw movErr;
 
       await boot();
@@ -725,7 +725,7 @@ document.getElementById("mv-delete").addEventListener("click", async () => {
 
 async function deleteMovement(id) {
   if (!confirm("Supprimer ce mouvement ?")) return;
-  const { error } = await supabase.from("movements").delete().eq("id", id);
+  const { error } = await sb.from("movements").delete().eq("id", id);
   if (error) { showToast("Erreur lors de la suppression.", true); return; }
   state.movements = state.movements.filter(m => m.id !== id);
   showToast("Mouvement supprimé.");
@@ -757,14 +757,14 @@ mvForm.addEventListener("submit", async (e) => {
   try {
     const editId = document.getElementById("mv-id").value;
     if (editId) {
-      const { data, error } = await supabase.from("movements")
+      const { data, error } = await sb.from("movements")
         .update({ account_id: accountId, amount, date, note: note || null, category })
         .eq("id", editId).select().single();
       if (error) throw error;
       state.movements = state.movements.map(m => m.id === editId ? data : m);
       showToast("Mouvement modifié.");
     } else {
-      const { data, error } = await supabase.from("movements")
+      const { data, error } = await sb.from("movements")
         .insert({
           user_id: state.session.user.id,
           account_id: accountId, amount, date, note: note || null, category,
@@ -788,7 +788,7 @@ mvForm.addEventListener("submit", async (e) => {
 /* ---------------------------------------------------------- */
 
 (async function init() {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await sb.auth.getSession();
   state.session = session;
   if (session) {
     boot();
