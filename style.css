@@ -610,3 +610,32 @@ main {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
   font-family: var(--font-serif); color: var(--navy); font-size: 1.1rem;
 }
+
+/* ---------------- Abonnements récurrents ---------------- */
+
+.card-title-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 4px; padding-bottom: 8px; border-bottom: 1px dashed var(--paper-line);
+}
+.card-title-row .card-title { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+
+.checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--ink-soft); cursor: pointer; }
+.checkbox-label input { width: auto; }
+
+.recurring-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--parchment-dark);
+}
+.recurring-item:last-child { border-bottom: none; }
+.recurring-item.paused { opacity: 0.55; }
+.recurring-item .rc-mid { flex: 1; min-width: 0; }
+.recurring-item .rc-label { font-weight: 600; font-size: 0.92rem; color: var(--navy); }
+.recurring-item .rc-meta { font-size: 0.78rem; color: var(--ink-soft); }
+.recurring-item .rc-amount { font-weight: 600; flex-shrink: 0; color: var(--rust); }
+.recurring-item .rc-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.recurring-item .rc-actions button { background: none; border: none; font-size: 0.95rem; padding: 4px; color: var(--ink-soft); }
+.recurring-item .rc-actions button:hover { color: var(--navy); }
+.rc-badge-paused {
+  font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--ink-soft); border: 1px solid var(--paper-line); border-radius: 10px; padding: 1px 7px; margin-left: 6px;
+}

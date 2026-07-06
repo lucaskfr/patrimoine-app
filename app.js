@@ -35,11 +35,13 @@ let state = {
   session: null,
   accounts: [],
   movements: [],
+  recurringExpenses: [],
   currentView: "dashboard",
   expenseCursor: startOfMonth(new Date()),
   heatmapYear: new Date().getFullYear(),
   charts: {},
   editingMovementId: null,
+  editingRecurringId: null,
 };
 
 /* ---------------------------------------------------------- */
@@ -177,9 +179,10 @@ async function boot() {
   document.getElementById("auth-screen").style.display = "none";
   document.getElementById("loading").style.display = "flex";
 
-  const [{ data: accounts, error: accErr }, { data: movements, error: movErr }] = await Promise.all([
+  const [{ data: accounts, error: accErr }, { data: movements, error: movErr }, { data: recurring, error: recErr }] = await Promise.all([
     sb.from("accounts").select("*").order("sort_order"),
     sb.from("movements").select("*").order("date", { ascending: false }),
+    sb.from("recurring_expenses").select("*").order("created_at"),
   ]);
 
   if (accErr || movErr) {
@@ -188,9 +191,11 @@ async function boot() {
     document.getElementById("loading").style.display = "none";
     return;
   }
+  if (recErr) console.warn("Abonnements récurrents indisponibles :", recErr.message);
 
   state.accounts = accounts || [];
   state.movements = movements || [];
+  state.recurringExpenses = recurring || [];
 
   document.getElementById("loading").style.display = "none";
 
@@ -199,6 +204,7 @@ async function boot() {
   } else {
     document.getElementById("onboarding-screen").style.display = "none";
     document.getElementById("app").classList.add("visible");
+    await generateDueRecurringExpenses();
     renderAll();
     autoRefreshStalePrices();
   }
@@ -778,6 +784,7 @@ function renderExpenses() {
   }
 
   renderTrendChart(acc);
+  renderRecurring();
   renderHeatmap(acc);
 
   const listEl = document.getElementById("exp-list");
@@ -830,6 +837,190 @@ function renderTrendChart(acc) {
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ---------------------------------------------------------- */
+/*  Abonnements / dépenses récurrentes mensuelles                */
+/* ---------------------------------------------------------- */
+
+function daysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+// Génère automatiquement, une fois par mois, le mouvement de dépense
+// correspondant à chaque abonnement actif dont le jour est déjà passé
+// et qui n'a pas encore de mouvement ce mois-ci. Évite ainsi de ressaisir
+// à la main les dépenses récurrentes identiques (loyer, abonnements...).
+async function generateDueRecurringExpenses() {
+  if (!state.recurringExpenses.length) return;
+  const today = new Date();
+  const todayDay = today.getDate();
+  const currentMonthStart = startOfMonth(today).toISOString().slice(0, 10);
+
+  const toInsert = [];
+  for (const re of state.recurringExpenses) {
+    if (!re.active) continue;
+    if (!accountById(re.account_id)) continue;
+    const day = Math.min(re.day_of_month, daysInMonth(today.getFullYear(), today.getMonth()));
+    if (todayDay < day) continue;
+    const alreadyGenerated = state.movements.some(m => m.recurring_id === re.id && m.date >= currentMonthStart);
+    if (alreadyGenerated) continue;
+    const dateStr = new Date(today.getFullYear(), today.getMonth(), day).toISOString().slice(0, 10);
+    toInsert.push({
+      user_id: state.session.user.id,
+      account_id: re.account_id,
+      date: dateStr,
+      amount: -Math.abs(Number(re.amount)),
+      category: re.category || "Abonnements",
+      note: re.label,
+      recurring_id: re.id,
+    });
+  }
+  if (toInsert.length === 0) return;
+
+  const { data, error } = await sb.from("movements").insert(toInsert).select();
+  if (error) { console.error("Erreur génération abonnements :", error); return; }
+  state.movements.push(...(data || []));
+  showToast(`${data.length} abonnement${data.length > 1 ? "s" : ""} ajouté${data.length > 1 ? "s" : ""} automatiquement ce mois-ci.`);
+}
+
+function renderRecurring() {
+  const el = document.getElementById("recurring-list");
+  if (!el) return;
+  const list = [...state.recurringExpenses].sort((a, b) => a.day_of_month - b.day_of_month);
+  if (list.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="icon">🔁</div>Aucun abonnement enregistré. Ajoutez vos dépenses fixes (loyer, streaming, salle de sport…) pour ne plus avoir à les ressaisir chaque mois.</div>`;
+    return;
+  }
+  el.innerHTML = list.map(re => `
+    <div class="recurring-item ${re.active ? "" : "paused"}">
+      <div class="rc-mid">
+        <div class="rc-label">${escapeHTML(re.label)}${re.active ? "" : `<span class="rc-badge-paused">En pause</span>`}</div>
+        <div class="rc-meta">Le ${re.day_of_month} de chaque mois${re.category ? " · " + re.category : ""}</div>
+      </div>
+      <span class="rc-amount amount">- ${formatEUR(re.amount)}</span>
+      <div class="rc-actions">
+        <button data-rc-edit="${re.id}" title="Modifier">✎</button>
+      </div>
+    </div>
+  `).join("");
+  el.querySelectorAll("[data-rc-edit]").forEach(btn => {
+    btn.addEventListener("click", () => openRecurringModal(btn.dataset.rcEdit));
+  });
+}
+
+const rcModal = document.getElementById("recurring-modal");
+const rcForm = document.getElementById("recurring-form");
+
+document.getElementById("add-recurring-btn").addEventListener("click", () => openRecurringModal());
+document.getElementById("rc-modal-close").addEventListener("click", closeRecurringModal);
+rcModal.addEventListener("click", (e) => { if (e.target === rcModal) closeRecurringModal(); });
+
+function openRecurringModal(recurringId) {
+  rcForm.reset();
+  document.getElementById("rc-error").style.display = "none";
+  document.getElementById("rc-id").value = "";
+  document.getElementById("rc-delete").style.display = "none";
+  document.getElementById("rc-active").checked = true;
+
+  if (recurringId) {
+    const re = state.recurringExpenses.find(r => r.id === recurringId);
+    if (!re) return;
+    state.editingRecurringId = recurringId;
+    document.getElementById("rc-modal-title").textContent = "Modifier l'abonnement";
+    document.getElementById("rc-id").value = re.id;
+    document.getElementById("rc-label").value = re.label;
+    document.getElementById("rc-amount").value = re.amount;
+    document.getElementById("rc-day").value = re.day_of_month;
+    if (re.category) document.getElementById("rc-category").value = re.category;
+    document.getElementById("rc-active").checked = re.active;
+    document.getElementById("rc-delete").style.display = "inline-block";
+  } else {
+    state.editingRecurringId = null;
+    document.getElementById("rc-modal-title").textContent = "Ajouter un abonnement";
+  }
+
+  rcModal.classList.add("open");
+}
+
+function closeRecurringModal() {
+  rcModal.classList.remove("open");
+}
+
+document.getElementById("rc-delete").addEventListener("click", async () => {
+  const id = document.getElementById("rc-id").value;
+  if (!id) return;
+  const confirmed = await confirmDialog("Supprimer cet abonnement ? Les mouvements déjà générés resteront dans le journal.");
+  if (!confirmed) return;
+  const { error } = await sb.from("recurring_expenses").delete().eq("id", id);
+  if (error) { showToast("Erreur lors de la suppression.", true); return; }
+  state.recurringExpenses = state.recurringExpenses.filter(r => r.id !== id);
+  showToast("Abonnement supprimé.");
+  closeRecurringModal();
+  renderAll();
+});
+
+rcForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("rc-error");
+  errEl.style.display = "none";
+
+  const acc = courantAccount();
+  if (!acc) {
+    errEl.textContent = "Aucun compte courant trouvé.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const label = document.getElementById("rc-label").value.trim();
+  const amount = parseFloat(document.getElementById("rc-amount").value);
+  const day = parseInt(document.getElementById("rc-day").value, 10);
+  const category = document.getElementById("rc-category").value;
+  const active = document.getElementById("rc-active").checked;
+
+  if (!label || isNaN(amount) || amount <= 0) {
+    errEl.textContent = "Merci de renseigner un nom et un montant valides.";
+    errEl.style.display = "block";
+    return;
+  }
+  if (isNaN(day) || day < 1 || day > 28) {
+    errEl.textContent = "Le jour du mois doit être compris entre 1 et 28.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const submitBtn = document.getElementById("rc-submit");
+  submitBtn.disabled = true;
+
+  try {
+    const editId = document.getElementById("rc-id").value;
+    if (editId) {
+      const { data, error } = await sb.from("recurring_expenses")
+        .update({ label, amount, day_of_month: day, category, active })
+        .eq("id", editId).select().single();
+      if (error) throw error;
+      state.recurringExpenses = state.recurringExpenses.map(r => r.id === editId ? data : r);
+      showToast("Abonnement modifié.");
+    } else {
+      const { data, error } = await sb.from("recurring_expenses")
+        .insert({
+          user_id: state.session.user.id,
+          account_id: acc.id,
+          label, amount, day_of_month: day, category, active,
+        }).select().single();
+      if (error) throw error;
+      state.recurringExpenses.push(data);
+      showToast("Abonnement ajouté.");
+    }
+    closeRecurringModal();
+    await generateDueRecurringExpenses();
+    renderAll();
+  } catch (err) {
+    errEl.textContent = "Erreur : " + err.message;
+    errEl.style.display = "block";
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
 
 /* ---------------------------------------------------------- */
 /*  Heatmap annuelle des dépenses                                */
