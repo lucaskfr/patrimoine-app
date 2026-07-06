@@ -846,6 +846,16 @@ function daysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate();
 }
 
+// Formate une date locale en "YYYY-MM-DD" sans passer par toISOString(),
+// qui convertit en UTC et peut faire glisser la date d'un jour en arrière
+// pour les fuseaux à l'est de UTC (ex : Europe/Paris en été).
+function toLocalISODate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 // Génère automatiquement, une fois par mois, le mouvement de dépense
 // correspondant à chaque abonnement actif dont le jour est déjà passé
 // et qui n'a pas encore de mouvement ce mois-ci. Évite ainsi de ressaisir
@@ -854,7 +864,7 @@ async function generateDueRecurringExpenses() {
   if (!state.recurringExpenses.length) return;
   const today = new Date();
   const todayDay = today.getDate();
-  const currentMonthStart = startOfMonth(today).toISOString().slice(0, 10);
+  const currentMonthStart = toLocalISODate(startOfMonth(today));
 
   const toInsert = [];
   for (const re of state.recurringExpenses) {
@@ -864,7 +874,7 @@ async function generateDueRecurringExpenses() {
     if (todayDay < day) continue;
     const alreadyGenerated = state.movements.some(m => m.recurring_id === re.id && m.date >= currentMonthStart);
     if (alreadyGenerated) continue;
-    const dateStr = new Date(today.getFullYear(), today.getMonth(), day).toISOString().slice(0, 10);
+    const dateStr = toLocalISODate(new Date(today.getFullYear(), today.getMonth(), day));
     toInsert.push({
       user_id: state.session.user.id,
       account_id: re.account_id,
