@@ -79,6 +79,62 @@ function showToast(msg, isError) {
   setTimeout(() => { el.className = "toast"; }, 2600);
 }
 
+/* ---------------------------------------------------------- */
+/*  Animation de compteur (chiffres qui s'incrémentent)          */
+/* ---------------------------------------------------------- */
+
+function prefersReducedMotion() {
+  return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+const _animatedValues = new WeakMap();
+
+// Anime un élément texte d'une valeur numérique à une autre (ease-out),
+// en repartant de la dernière valeur affichée sur ce même élément afin
+// que les mises à jour successives restent fluides plutôt que de rejouer
+// l'animation depuis 0 à chaque re-rendu.
+function animateNumberTo(el, to, formatFn, duration = 700) {
+  if (!el) return;
+  const from = _animatedValues.has(el) ? _animatedValues.get(el) : 0;
+  _animatedValues.set(el, to);
+  if (prefersReducedMotion() || Math.abs(to - from) < 0.005) {
+    el.textContent = formatFn(to);
+    return;
+  }
+  const start = performance.now();
+  function tick(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = formatFn(from + (to - from) * eased);
+    if (progress < 1) requestAnimationFrame(tick);
+    else el.textContent = formatFn(to);
+  }
+  requestAnimationFrame(tick);
+}
+
+// Variante par clé (utile quand l'élément est recréé à chaque rendu, ex :
+// les soldes de comptes régénérés via innerHTML). "from" doit déjà être
+// affiché sur l'élément au moment de l'appel pour un départ sans à-coup.
+const _lastValueByKey = {};
+function animateNumberKeyed(key, el, to, formatFn, duration = 700) {
+  if (!el) return;
+  const from = key in _lastValueByKey ? _lastValueByKey[key] : 0;
+  _lastValueByKey[key] = to;
+  if (prefersReducedMotion() || Math.abs(to - from) < 0.005) {
+    el.textContent = formatFn(to);
+    return;
+  }
+  const start = performance.now();
+  function tick(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = formatFn(from + (to - from) * eased);
+    if (progress < 1) requestAnimationFrame(tick);
+    else el.textContent = formatFn(to);
+  }
+  requestAnimationFrame(tick);
+}
+
 function accountById(id) { return state.accounts.find(a => a.id === id); }
 
 function accountBalance(accountId) {
@@ -342,7 +398,7 @@ function renderAll() {
 
 function renderDashboard() {
   const total = totalPatrimoine();
-  document.getElementById("db-total").textContent = formatEUR(total);
+  animateNumberTo(document.getElementById("db-total"), total, formatEUR);
 
   // Variation depuis le début du mois
   const startMonth = startOfMonth(new Date()).toISOString().slice(0, 10);
@@ -444,7 +500,7 @@ function computeStreakContext() {
 
 function renderStreakAndBadges() {
   const ctx = computeStreakContext();
-  document.getElementById("streak-value").textContent = `${ctx.streak} mois`;
+  animateNumberTo(document.getElementById("streak-value"), ctx.streak, (v) => `${Math.round(v)} mois`, 500);
 
   const grid = document.getElementById("badges-grid");
   grid.innerHTML = BADGE_DEFS.map(b => {
@@ -469,11 +525,14 @@ function renderRepartitionChart() {
   if (state.charts.repartition) state.charts.repartition.destroy();
   state.charts.repartition = new Chart(ctx, {
     type: "doughnut",
-    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#fffdf6" }] },
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#fffdf6", hoverOffset: 8 }] },
     options: {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.label}: ${formatEUR(c.raw)}` } } },
       cutout: "65%",
       maintainAspectRatio: false,
+      animation: { duration: 800, easing: "easeOutQuart" },
+      animateRotate: true,
+      interaction: { intersect: true },
     },
   });
 
@@ -521,6 +580,7 @@ function renderEvolutionChart() {
         fill: true,
         tension: 0.25,
         pointRadius: points.length > 20 ? 0 : 3,
+        pointHoverRadius: 6,
         pointBackgroundColor: "#0a2540",
       }],
     },
@@ -531,6 +591,8 @@ function renderEvolutionChart() {
         y: { ticks: { callback: (v) => formatEUR(v) } },
         x: { ticks: { maxTicksLimit: 6 } },
       },
+      animation: { duration: 900, easing: "easeOutQuart" },
+      transitions: { active: { animation: { duration: 200 } } },
     },
   });
 }
@@ -702,6 +764,8 @@ function renderAccounts() {
   const el = document.getElementById("accounts-list");
   el.innerHTML = state.accounts.map(a => {
     const balance = accountBalance(a.id);
+    const balanceKey = "acc-" + a.id;
+    const fromBalance = balanceKey in _lastValueByKey ? _lastValueByKey[balanceKey] : 0;
     const history = state.movements
       .filter(m => m.account_id === a.id)
       .sort((x, y) => y.date.localeCompare(x.date))
@@ -714,7 +778,7 @@ function renderAccounts() {
             <span class="type-tag">${TYPE_LABELS[a.type]}</span>
           </div>
         </div>
-        <div class="balance amount">${formatEUR(balance)}</div>
+        <div class="balance amount" data-balance-key="${balanceKey}" data-balance-to="${balance}">${formatEUR(fromBalance)}</div>
         ${capGaugeHTML(a, balance)}
         ${a.type === "crypto" ? cryptoBoxHTML(a) : ""}
         <div class="account-card-actions">
@@ -745,6 +809,9 @@ function renderAccounts() {
   });
   el.querySelectorAll('[data-action="crypto-refresh"]').forEach(btn => {
     btn.addEventListener("click", () => refreshCryptoPrice(btn.dataset.account));
+  });
+  el.querySelectorAll('[data-balance-key]').forEach(div => {
+    animateNumberKeyed(div.dataset.balanceKey, div, Number(div.dataset.balanceTo), formatEUR);
   });
 }
 
@@ -841,12 +908,13 @@ function renderTrendChart(acc) {
     type: "bar",
     data: {
       labels: months.map(m => capitalize(m.toLocaleDateString("fr-FR", { month: "short" }))),
-      datasets: [{ data: totals, backgroundColor: "#a4502b", borderRadius: 4, maxBarThickness: 34 }],
+      datasets: [{ data: totals, backgroundColor: "#a4502b", hoverBackgroundColor: "#c0603a", borderRadius: 4, maxBarThickness: 34 }],
     },
     options: {
       maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => formatEUR(c.raw) } } },
       scales: { y: { ticks: { callback: (v) => formatEUR(v) } } },
+      animation: { duration: 800, easing: "easeOutQuart" },
     },
   });
 }
