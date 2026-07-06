@@ -175,7 +175,22 @@ sb.auth.onAuthStateChange((event, session) => {
 /*  Boot / data load                                            */
 /* ---------------------------------------------------------- */
 
+// boot() est déclenché à la fois par init() et par onAuthStateChange au
+// chargement de la page ; ce verrou évite qu'il s'exécute deux fois en
+// parallèle (ce qui pouvait générer un abonnement récurrent en double).
+let bootInFlight = false;
+
 async function boot() {
+  if (bootInFlight) return;
+  bootInFlight = true;
+  try {
+    await bootInner();
+  } finally {
+    bootInFlight = false;
+  }
+}
+
+async function bootInner() {
   document.getElementById("auth-screen").style.display = "none";
   document.getElementById("loading").style.display = "flex";
 
