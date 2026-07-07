@@ -7,27 +7,45 @@
 /*  Setup                                                       */
 /* ---------------------------------------------------------- */
 
+// Stockage de session personnalisé pour la case "Rester connecté" :
+// la préférence elle-même est toujours en localStorage (juste un indicateur,
+// aucune donnée sensible), mais le jeton de session va soit en localStorage
+// (persiste après fermeture du navigateur), soit en sessionStorage (effacé
+// à la fermeture de l'onglet/navigateur) selon le choix de l'utilisateur.
+const REMEMBER_ME_KEY = "patrimoine_remember_me";
+function preferredSessionStorage() {
+  return localStorage.getItem(REMEMBER_ME_KEY) === "0" ? window.sessionStorage : window.localStorage;
+}
+const rememberAwareStorage = {
+  getItem: (key) => preferredSessionStorage().getItem(key),
+  setItem: (key, value) => preferredSessionStorage().setItem(key, value),
+  removeItem: (key) => preferredSessionStorage().removeItem(key),
+};
+
 const sb = window.supabase.createClient(
   window.SUPABASE_CONFIG.url,
-  window.SUPABASE_CONFIG.anonKey
+  window.SUPABASE_CONFIG.anonKey,
+  { auth: { storage: rememberAwareStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
 );
 
-const DEFAULT_ACCOUNTS = [
-  { name: "Compte Courant", type: "courant", color: "#0a2540", sort_order: 1 },
-  { name: "Livret A", type: "epargne_reglementee", color: "#b08d2e", sort_order: 2 },
-  { name: "LDD", type: "epargne_reglementee", color: "#d9b95e", sort_order: 3 },
-  { name: "PEL", type: "epargne_reglementee", color: "#8a7032", sort_order: 4 },
-  { name: "PEA", type: "investissement", color: "#5c7a5c", sort_order: 5 },
-  { name: "Kraken", type: "crypto", color: "#6b4ca0", sort_order: 6 },
-  { name: "Bitstack", type: "crypto", color: "#a4502b", sort_order: 7 },
-];
+const COURANT_ACCOUNT_DEFAULT = { name: "Compte Courant", type: "courant", color: "#0a2540" };
+
+// Palette cyclique attribuée automatiquement aux comptes créés par l'utilisateur.
+const ACCOUNT_COLOR_PALETTE = ["#b08d2e", "#5c7a5c", "#6b4ca0", "#a4502b", "#8a7032", "#3d6b6b", "#7a3a1f", "#9a6b3f"];
+function nextAccountColor(existingCount) {
+  return ACCOUNT_COLOR_PALETTE[existingCount % ACCOUNT_COLOR_PALETTE.length];
+}
 
 const TYPE_LABELS = {
   courant: "Compte courant",
-  epargne_reglementee: "Épargne réglementée",
+  epargne_reglementee: "Épargne",
   investissement: "Investissement",
   crypto: "Crypto",
 };
+
+// Plafonds réglementés : rattachés à un compte via cap_type plutôt que via
+// son nom, pour laisser l'utilisateur nommer librement ses comptes.
+const CAP_VALUES = { livret_a: 22950, ldd: 12000, pea: 150000 };
 
 const CATEGORIES = ["Logement", "Alimentation", "Transport", "Loisirs", "Abonnements", "Santé", "Autre"];
 
@@ -71,6 +89,56 @@ function isSameMonth(dateStr, monthDate) {
   const d = new Date(dateStr + "T00:00:00");
   return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
 }
+
+/* ---------------------------------------------------------- */
+/*  Personnalisation de l'interface (thème / accent / densité / police) */
+/*  Modifiable à tout moment via le panneau de réglages ; appliquée      */
+/*  aussi immédiatement au chargement (voir script inline dans index.html)*/
+/* ---------------------------------------------------------- */
+
+const SETTINGS_DEFS = [
+  { key: "theme", storageKey: "patrimoine_theme", groupId: "settings-theme-group", attr: "data-setting-theme", default: "parchemin" },
+  { key: "accent", storageKey: "patrimoine_accent", groupId: "settings-accent-group", attr: "data-setting-accent", default: "or" },
+  { key: "density", storageKey: "patrimoine_density", groupId: "settings-density-group", attr: "data-setting-density", default: "confort" },
+  { key: "font", storageKey: "patrimoine_font", groupId: "settings-font-group", attr: "data-setting-font", default: "classique" },
+];
+
+function applySettingsToUI() {
+  SETTINGS_DEFS.forEach(def => {
+    const current = localStorage.getItem(def.storageKey) || def.default;
+    document.getElementById(def.groupId).querySelectorAll("button").forEach(btn => {
+      btn.classList.toggle("active", btn.getAttribute(def.attr) === current);
+    });
+  });
+}
+
+SETTINGS_DEFS.forEach(def => {
+  document.getElementById(def.groupId).querySelectorAll("button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const value = btn.getAttribute(def.attr);
+      localStorage.setItem(def.storageKey, value);
+      document.documentElement.setAttribute("data-" + def.key, value);
+      applySettingsToUI();
+    });
+  });
+});
+
+const settingsModal = document.getElementById("settings-modal");
+document.getElementById("settings-btn").addEventListener("click", () => {
+  applySettingsToUI();
+  settingsModal.classList.add("open");
+});
+document.getElementById("settings-modal-close").addEventListener("click", () => settingsModal.classList.remove("open"));
+settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) settingsModal.classList.remove("open"); });
+
+document.getElementById("settings-reset-btn").addEventListener("click", () => {
+  SETTINGS_DEFS.forEach(def => {
+    localStorage.removeItem(def.storageKey);
+    document.documentElement.setAttribute("data-" + def.key, def.default);
+  });
+  applySettingsToUI();
+  showToast("Réglages réinitialisés.");
+});
 
 function showToast(msg, isError) {
   const el = document.getElementById("toast");
@@ -169,6 +237,8 @@ function setAuthMode(mode) {
   document.getElementById("auth-submit").textContent = mode === "login" ? "Se connecter" : "Créer mon compte";
   document.getElementById("auth-error").style.display = "none";
   document.getElementById("auth-info").style.display = "none";
+  document.getElementById("auth-remember-field").style.display = mode === "login" ? "block" : "none";
+  document.getElementById("auth-forgot-link").style.display = mode === "login" ? "block" : "none";
 }
 
 document.getElementById("auth-form").addEventListener("submit", async (e) => {
@@ -184,6 +254,8 @@ document.getElementById("auth-form").addEventListener("submit", async (e) => {
 
   try {
     if (authMode === "login") {
+      const remember = document.getElementById("auth-remember").checked;
+      localStorage.setItem(REMEMBER_ME_KEY, remember ? "1" : "0");
       const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) throw error;
     } else {
@@ -211,12 +283,84 @@ function translateAuthError(msg) {
   return msg;
 }
 
+/* ---------------------------------------------------------- */
+/*  Mot de passe oublié / réinitialisation                       */
+/* ---------------------------------------------------------- */
+
+const authForm = document.getElementById("auth-form");
+const forgotForm = document.getElementById("forgot-form");
+
+document.getElementById("auth-forgot-link").addEventListener("click", () => {
+  authForm.style.display = "none";
+  document.querySelector(".auth-tabs").style.display = "none";
+  forgotForm.style.display = "block";
+  document.getElementById("forgot-error").style.display = "none";
+  document.getElementById("forgot-info").style.display = "none";
+});
+
+document.getElementById("forgot-back-link").addEventListener("click", () => {
+  forgotForm.style.display = "none";
+  authForm.style.display = "block";
+  document.querySelector(".auth-tabs").style.display = "flex";
+});
+
+forgotForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.getElementById("forgot-email").value.trim();
+  const errEl = document.getElementById("forgot-error");
+  const infoEl = document.getElementById("forgot-info");
+  errEl.style.display = "none";
+  infoEl.style.display = "none";
+  const btn = document.getElementById("forgot-submit");
+  btn.disabled = true;
+  try {
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname,
+    });
+    if (error) throw error;
+    infoEl.textContent = "Email envoyé (si un compte existe avec cette adresse). Cliquez sur le lien reçu pour choisir un nouveau mot de passe.";
+    infoEl.style.display = "block";
+  } catch (err) {
+    errEl.textContent = "Erreur : " + err.message;
+    errEl.style.display = "block";
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("reset-password-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const password = document.getElementById("reset-password-input").value;
+  const errEl = document.getElementById("reset-password-error");
+  errEl.style.display = "none";
+  const btn = document.getElementById("reset-password-submit");
+  btn.disabled = true;
+  try {
+    const { error } = await sb.auth.updateUser({ password });
+    if (error) throw error;
+    document.getElementById("reset-password-screen").style.display = "none";
+    showToast("Mot de passe mis à jour.");
+    boot();
+  } catch (err) {
+    errEl.textContent = "Erreur : " + err.message;
+    errEl.style.display = "block";
+    btn.disabled = false;
+  }
+});
+
 document.getElementById("logout-btn").addEventListener("click", async () => {
   await sb.auth.signOut();
 });
 
 sb.auth.onAuthStateChange((event, session) => {
   state.session = session;
+  if (event === "PASSWORD_RECOVERY") {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("auth-screen").style.display = "none";
+    document.getElementById("app").classList.remove("visible");
+    document.getElementById("reset-password-screen").style.display = "flex";
+    return;
+  }
   if (session) {
     boot();
   } else {
@@ -285,90 +429,195 @@ async function bootInner() {
 /*  Onboarding                                                   */
 /* ---------------------------------------------------------- */
 
+// Comptes ajoutés pendant l'onboarding, en attente de création finale
+// (aucun insert Supabase tant que "Commencer le suivi" n'est pas cliqué).
+let obStagedAccounts = [];
+let obCourantBalance = 0;
+
 function showOnboarding() {
-  const form = document.getElementById("onboarding-form");
-  const progress = document.getElementById("ob-progress");
-  form.innerHTML = "";
-  progress.innerHTML = "";
+  obStagedAccounts = [];
+  obCourantBalance = 0;
 
-  DEFAULT_ACCOUNTS.forEach((acc, i) => {
-    progress.insertAdjacentHTML("beforeend", `<span data-step="${i}"></span>`);
-    const step = document.createElement("div");
-    step.className = "obstep" + (i === 0 ? " active" : "");
-    step.dataset.step = i;
-    step.innerHTML = `
-      <h3 style="margin-bottom:4px;">${acc.name}</h3>
-      <p class="hint" style="margin-bottom:14px;">${TYPE_LABELS[acc.type]}</p>
-      <div class="field">
-        <label>Solde actuel</label>
-        <input type="number" step="0.01" class="ob-balance-input" data-index="${i}" placeholder="0.00">
-      </div>
-    `;
-    form.appendChild(step);
-  });
-
-  let current = 0;
-  function updateProgress() {
-    progress.querySelectorAll("span").forEach((s, i) => s.classList.toggle("done", i <= current));
-    form.querySelectorAll(".obstep").forEach((s, i) => s.classList.toggle("active", i === current));
-    document.getElementById("ob-submit").textContent = current === DEFAULT_ACCOUNTS.length - 1
-      ? "Commencer le suivi" : "Suivant";
-  }
-
-  document.getElementById("ob-submit").onclick = async () => {
-    const errEl = document.getElementById("ob-error");
-    errEl.style.display = "none";
-
-    const inputs = form.querySelectorAll(".ob-balance-input");
-    const currentInput = inputs[current];
-    if (currentInput.value === "") {
-      errEl.textContent = "Merci d'indiquer un solde (0 si vide).";
-      errEl.style.display = "block";
-      return;
-    }
-
-    if (current < DEFAULT_ACCOUNTS.length - 1) {
-      current += 1;
-      updateProgress();
-      return;
-    }
-
-    // Dernière étape : créer tous les comptes + mouvement initial
-    const submitBtn = document.getElementById("ob-submit");
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Création en cours…";
-    try {
-      const userId = state.session.user.id;
-      const accountsToInsert = DEFAULT_ACCOUNTS.map(a => ({
-        user_id: userId, name: a.name, type: a.type, color: a.color, sort_order: a.sort_order,
-      }));
-      const { data: inserted, error: insErr } = await sb.from("accounts").insert(accountsToInsert).select();
-      if (insErr) throw insErr;
-
-      const movementsToInsert = inserted.map((acc, i) => ({
-        user_id: userId,
-        account_id: acc.id,
-        date: todayISO(),
-        amount: Number(inputs[i].value || 0),
-        category: null,
-        note: "Solde initial",
-        is_initial: true,
-      }));
-      const { error: movErr } = await sb.from("movements").insert(movementsToInsert);
-      if (movErr) throw movErr;
-
-      await boot();
-    } catch (err) {
-      errEl.textContent = "Erreur : " + err.message;
-      errEl.style.display = "block";
-      submitBtn.disabled = false;
-      updateProgress();
-    }
-  };
+  document.getElementById("ob-courant-balance").value = "";
+  document.getElementById("ob-courant-error").style.display = "none";
+  document.getElementById("ob-error").style.display = "none";
+  document.getElementById("ob-step-courant").style.display = "block";
+  document.getElementById("ob-step-accounts").style.display = "none";
+  renderObAccountsList();
 
   document.getElementById("onboarding-screen").style.display = "flex";
-  updateProgress();
 }
+
+document.getElementById("ob-courant-next").addEventListener("click", () => {
+  const errEl = document.getElementById("ob-courant-error");
+  errEl.style.display = "none";
+  const input = document.getElementById("ob-courant-balance");
+  obCourantBalance = Number(input.value || 0);
+  if (isNaN(obCourantBalance)) {
+    errEl.textContent = "Merci d'indiquer un solde valide (0 si vide).";
+    errEl.style.display = "block";
+    return;
+  }
+  document.getElementById("ob-step-courant").style.display = "none";
+  document.getElementById("ob-step-accounts").style.display = "block";
+});
+
+document.getElementById("ob-add-account-btn").addEventListener("click", () => openAddAccountModal("onboarding"));
+
+function renderObAccountsList() {
+  const el = document.getElementById("ob-accounts-list");
+  if (obStagedAccounts.length === 0) {
+    el.innerHTML = `<div class="hint" style="margin-bottom:10px;">Aucun compte ajouté pour l'instant.</div>`;
+    return;
+  }
+  el.innerHTML = obStagedAccounts.map((a, i) => `
+    <div class="account-card" style="--account-color:${a.color}; padding:10px 14px;">
+      <div class="account-card-head">
+        <div>
+          <div class="name">${a.name}</div>
+          <span class="type-tag">${TYPE_LABELS[a.type]}</span>
+        </div>
+        <button type="button" class="btn btn-text btn-sm" data-ob-remove="${i}">Retirer</button>
+      </div>
+      <div class="hint">Solde initial : ${formatEUR(a.balance)}</div>
+    </div>
+  `).join("");
+  el.querySelectorAll("[data-ob-remove]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      obStagedAccounts.splice(Number(btn.dataset.obRemove), 1);
+      renderObAccountsList();
+    });
+  });
+}
+
+document.getElementById("ob-submit").addEventListener("click", async () => {
+  const errEl = document.getElementById("ob-error");
+  errEl.style.display = "none";
+  const submitBtn = document.getElementById("ob-submit");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Création en cours…";
+  try {
+    const userId = state.session.user.id;
+    const accountsToInsert = [
+      { user_id: userId, name: COURANT_ACCOUNT_DEFAULT.name, type: COURANT_ACCOUNT_DEFAULT.type, color: COURANT_ACCOUNT_DEFAULT.color, sort_order: 0, cap_type: null },
+      ...obStagedAccounts.map((a, i) => ({
+        user_id: userId, name: a.name, type: a.type, color: a.color, sort_order: i + 1, cap_type: a.capType || null,
+      })),
+    ];
+    const balances = [obCourantBalance, ...obStagedAccounts.map(a => a.balance)];
+
+    const { data: inserted, error: insErr } = await sb.from("accounts").insert(accountsToInsert).select();
+    if (insErr) throw insErr;
+
+    const bySort = [...inserted].sort((x, y) => x.sort_order - y.sort_order);
+    const movementsToInsert = bySort.map((acc, i) => ({
+      user_id: userId,
+      account_id: acc.id,
+      date: todayISO(),
+      amount: Number(balances[i] || 0),
+      category: null,
+      note: "Solde initial",
+      is_initial: true,
+    }));
+    const { error: movErr } = await sb.from("movements").insert(movementsToInsert);
+    if (movErr) throw movErr;
+
+    await boot();
+  } catch (err) {
+    errEl.textContent = "Erreur : " + err.message;
+    errEl.style.display = "block";
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Commencer le suivi";
+  }
+});
+
+/* ---------------------------------------------------------- */
+/*  Ajouter un compte (modal partagée : onboarding + page Comptes) */
+/* ---------------------------------------------------------- */
+
+const aaModal = document.getElementById("add-account-modal");
+const aaForm = document.getElementById("add-account-form");
+let aaMode = "live";
+
+function openAddAccountModal(mode) {
+  aaMode = mode;
+  aaForm.reset();
+  document.getElementById("add-account-error").style.display = "none";
+  document.getElementById("add-account-type-group").querySelectorAll("button").forEach((b, i) => b.classList.toggle("active", i === 0));
+  document.getElementById("add-account-cap-field").style.display = "block";
+  aaModal.classList.add("open");
+}
+
+function closeAddAccountModal() {
+  aaModal.classList.remove("open");
+}
+
+document.getElementById("add-account-modal-close").addEventListener("click", closeAddAccountModal);
+aaModal.addEventListener("click", (e) => { if (e.target === aaModal) closeAddAccountModal(); });
+
+document.getElementById("add-account-type-group").querySelectorAll("button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.getElementById("add-account-type-group").querySelectorAll("button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const isSavings = btn.dataset.accountType === "epargne_reglementee";
+    document.getElementById("add-account-cap-field").style.display = isSavings ? "block" : "none";
+  });
+});
+
+aaForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("add-account-error");
+  errEl.style.display = "none";
+
+  const typeBtn = document.getElementById("add-account-type-group").querySelector("button.active");
+  const type = typeBtn ? typeBtn.dataset.accountType : "epargne_reglementee";
+  const name = document.getElementById("add-account-name").value.trim();
+  const capType = type === "epargne_reglementee" ? (document.getElementById("add-account-cap").value || null) : null;
+  const balance = Number(document.getElementById("add-account-balance").value || 0);
+
+  if (!name) {
+    errEl.textContent = "Merci de donner un nom à ce compte.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  if (aaMode === "onboarding") {
+    const color = nextAccountColor(obStagedAccounts.length);
+    obStagedAccounts.push({ name, type, color, capType, balance });
+    renderObAccountsList();
+    closeAddAccountModal();
+    return;
+  }
+
+  // Mode "live" : insertion directe dans Supabase depuis la page Comptes.
+  const submitBtn = document.getElementById("add-account-submit");
+  submitBtn.disabled = true;
+  try {
+    const userId = state.session.user.id;
+    const color = nextAccountColor(state.accounts.length);
+    const sortOrder = state.accounts.reduce((max, a) => Math.max(max, a.sort_order || 0), 0) + 1;
+    const { data: acc, error: insErr } = await sb.from("accounts")
+      .insert({ user_id: userId, name, type, color, cap_type: capType, sort_order: sortOrder })
+      .select().single();
+    if (insErr) throw insErr;
+
+    const { error: movErr } = await sb.from("movements").insert({
+      user_id: userId, account_id: acc.id, date: todayISO(), amount: balance, category: null, note: "Solde initial", is_initial: true,
+    });
+    if (movErr) throw movErr;
+
+    await boot();
+    closeAddAccountModal();
+    showToast("Compte ajouté.");
+  } catch (err) {
+    errEl.textContent = "Erreur : " + err.message;
+    errEl.style.display = "block";
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+document.getElementById("add-account-btn").addEventListener("click", () => openAddAccountModal("live"));
 
 /* ---------------------------------------------------------- */
 /*  Navigation                                                   */
@@ -492,8 +741,8 @@ function computeStreakContext() {
     if (firstTotal > 0) doubled = totalPatrimoine() >= firstTotal * 2;
   }
 
-  const livretA = state.accounts.find(a => a.name === "Livret A");
-  const livretACapped = livretA ? accountBalance(livretA.id) >= REGULATED_CAPS["Livret A"] : false;
+  const livretA = state.accounts.find(a => a.cap_type === "livret_a");
+  const livretACapped = livretA ? accountBalance(livretA.id) >= CAP_VALUES.livret_a : false;
 
   return { streak, maxStreak, everPositiveMonth, doubled, livretACapped };
 }
@@ -731,14 +980,8 @@ function autoRefreshStalePrices() {
 /*  Plafonds réglementés                                          */
 /* ---------------------------------------------------------- */
 
-const REGULATED_CAPS = {
-  "Livret A": 22950,
-  "LDD": 12000,
-  "PEA": 150000,
-};
-
 function capGaugeHTML(a, balance) {
-  const cap = REGULATED_CAPS[a.name];
+  const cap = CAP_VALUES[a.cap_type];
   if (!cap) return "";
   const pct = Math.max(0, Math.min(100, (balance / cap) * 100));
   const remaining = cap - balance;
@@ -1416,12 +1659,13 @@ function buildFinancialSummary() {
 
   const ctx = computeStreakContext();
 
-  const capsStatus = Object.entries(REGULATED_CAPS).map(([name, cap]) => {
-    const a = state.accounts.find(x => x.name === name);
-    if (!a) return null;
-    const bal = accountBalance(a.id);
-    return { name, balance: Math.round(bal * 100) / 100, cap, pctUsed: Math.round((bal / cap) * 1000) / 10 };
-  }).filter(Boolean);
+  const capsStatus = state.accounts
+    .filter(a => a.cap_type && CAP_VALUES[a.cap_type])
+    .map(a => {
+      const cap = CAP_VALUES[a.cap_type];
+      const bal = accountBalance(a.id);
+      return { name: a.name, balance: Math.round(bal * 100) / 100, cap, pctUsed: Math.round((bal / cap) * 1000) / 10 };
+    });
 
   return {
     totalPatrimoine: Math.round(total * 100) / 100,

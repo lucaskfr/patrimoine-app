@@ -10,7 +10,20 @@
 <meta name="theme-color" content="#0a2540">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" href="icon.png">
-<link rel="stylesheet" href="style.css?v=11">
+<script>
+// Applique la personnalisation d'interface sauvegardée avant le premier
+// rendu, pour éviter tout flash de thème par défaut.
+(function () {
+  try {
+    var html = document.documentElement;
+    html.setAttribute("data-theme", localStorage.getItem("patrimoine_theme") || "parchemin");
+    html.setAttribute("data-accent", localStorage.getItem("patrimoine_accent") || "or");
+    html.setAttribute("data-density", localStorage.getItem("patrimoine_density") || "confort");
+    html.setAttribute("data-font", localStorage.getItem("patrimoine_font") || "classique");
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
@@ -34,9 +47,41 @@
         <label for="auth-password">Mot de passe</label>
         <input id="auth-password" type="password" autocomplete="current-password" required minlength="6">
       </div>
+      <div class="field" id="auth-remember-field">
+        <label class="checkbox-label"><input type="checkbox" id="auth-remember" checked> Rester connecté</label>
+      </div>
       <div id="auth-error" class="error-msg" style="display:none;"></div>
       <div id="auth-info" class="hint" style="display:none;"></div>
       <button type="submit" class="btn btn-primary btn-block" id="auth-submit">Se connecter</button>
+      <button type="button" class="btn-text" id="auth-forgot-link" style="margin-top:10px;">Mot de passe oublié ?</button>
+    </form>
+
+    <form id="forgot-form" style="display:none;">
+      <p class="hint" style="margin-bottom:14px;">Indiquez votre email, nous vous enverrons un lien pour réinitialiser votre mot de passe.</p>
+      <div class="field">
+        <label for="forgot-email">Email</label>
+        <input id="forgot-email" type="email" autocomplete="email" required>
+      </div>
+      <div id="forgot-error" class="error-msg" style="display:none;"></div>
+      <div id="forgot-info" class="hint" style="display:none;"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="forgot-submit">Envoyer le lien</button>
+      <button type="button" class="btn-text" id="forgot-back-link" style="margin-top:10px;">Retour à la connexion</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== NOUVEAU MOT DE PASSE (lien de récupération) ===================== -->
+<div id="reset-password-screen" class="centered-screen" style="display:none;">
+  <div class="auth-card">
+    <h1>🔑 Nouveau mot de passe</h1>
+    <p class="subtitle">Choisissez un nouveau mot de passe pour votre compte.</p>
+    <form id="reset-password-form">
+      <div class="field">
+        <label for="reset-password-input">Nouveau mot de passe</label>
+        <input id="reset-password-input" type="password" autocomplete="new-password" required minlength="6">
+      </div>
+      <div id="reset-password-error" class="error-msg" style="display:none;"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="reset-password-submit">Mettre à jour le mot de passe</button>
     </form>
   </div>
 </div>
@@ -45,11 +90,114 @@
 <div id="onboarding-screen" class="centered-screen" style="display:none;">
   <div class="onboarding-card">
     <h1>Bienvenue 👋</h1>
-    <p class="subtitle">Indiquez le solde actuel de chacun de vos comptes pour démarrer votre suivi.</p>
-    <div class="onboarding-progress" id="ob-progress"></div>
-    <form id="onboarding-form"></form>
-    <div id="ob-error" class="error-msg" style="display:none;"></div>
-    <button type="button" class="btn btn-gold btn-block" id="ob-submit">Commencer le suivi</button>
+    <p class="subtitle">Configurons votre suivi. Le compte courant est créé automatiquement ; vous ajoutez ensuite vos autres comptes librement, avec le nom de votre choix.</p>
+
+    <div id="ob-step-courant">
+      <h3 style="margin-bottom:4px;">Compte Courant</h3>
+      <p class="hint" style="margin-bottom:14px;">Votre compte du quotidien.</p>
+      <div class="field">
+        <label for="ob-courant-balance">Solde actuel</label>
+        <input type="number" step="0.01" id="ob-courant-balance" placeholder="0.00">
+      </div>
+      <div id="ob-courant-error" class="error-msg" style="display:none;"></div>
+      <button type="button" class="btn btn-gold btn-block" id="ob-courant-next">Continuer</button>
+    </div>
+
+    <div id="ob-step-accounts" style="display:none;">
+      <h3 style="margin-bottom:4px;">Vos autres comptes</h3>
+      <p class="hint" style="margin-bottom:14px;">Épargne, investissement, crypto… ajoutez-en autant que vous voulez. Vous pourrez toujours en ajouter d'autres plus tard.</p>
+      <div id="ob-accounts-list"></div>
+      <button type="button" class="btn btn-outline btn-block" id="ob-add-account-btn" style="margin-bottom:14px;">+ Ajouter un compte</button>
+      <div id="ob-error" class="error-msg" style="display:none;"></div>
+      <button type="button" class="btn btn-gold btn-block" id="ob-submit">Commencer le suivi</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL : ajouter un compte (onboarding + page Comptes) ===================== -->
+<div class="modal-overlay" id="add-account-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Ajouter un compte</h3>
+      <button class="modal-close" id="add-account-modal-close">&times;</button>
+    </div>
+    <form id="add-account-form">
+      <div class="field">
+        <label>Type de compte</label>
+        <div class="toggle-group" id="add-account-type-group">
+          <button type="button" class="active" data-account-type="epargne_reglementee">Épargne</button>
+          <button type="button" data-account-type="investissement">Investissement</button>
+          <button type="button" data-account-type="crypto">Crypto</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="add-account-name">Nom du compte</label>
+        <input type="text" id="add-account-name" maxlength="60" placeholder="ex : Livret A, PEA, Kraken…" required>
+      </div>
+      <div class="field" id="add-account-cap-field">
+        <label for="add-account-cap">Plafond réglementé (optionnel)</label>
+        <select id="add-account-cap">
+          <option value="">Aucun plafond</option>
+          <option value="livret_a">Livret A (22 950 €)</option>
+          <option value="ldd">LDD (12 000 €)</option>
+          <option value="pea">PEA (150 000 €)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="add-account-balance">Solde actuel</label>
+        <input type="number" step="0.01" id="add-account-balance" placeholder="0.00">
+      </div>
+      <div id="add-account-error" class="error-msg" style="display:none;"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="add-account-submit">Ajouter</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== MODAL : personnalisation de l'interface ===================== -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Personnaliser l'interface</h3>
+      <button class="modal-close" id="settings-modal-close">&times;</button>
+    </div>
+    <p class="hint" style="margin-bottom:16px;">Ces réglages sont propres à cet appareil et peuvent être changés à tout moment.</p>
+
+    <div class="field">
+      <label>Thème</label>
+      <div class="toggle-group" id="settings-theme-group">
+        <button type="button" data-setting-theme="parchemin">Parchemin</button>
+        <button type="button" data-setting-theme="clair">Clair</button>
+        <button type="button" data-setting-theme="sombre">Sombre</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Couleur d'accent</label>
+      <div class="toggle-group" id="settings-accent-group">
+        <button type="button" data-setting-accent="or">Or</button>
+        <button type="button" data-setting-accent="emeraude">Émeraude</button>
+        <button type="button" data-setting-accent="bordeaux">Bordeaux</button>
+        <button type="button" data-setting-accent="bleu">Bleu nuit</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Densité</label>
+      <div class="toggle-group" id="settings-density-group">
+        <button type="button" data-setting-density="confort">Confortable</button>
+        <button type="button" data-setting-density="compact">Compacte</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Police des titres</label>
+      <div class="toggle-group" id="settings-font-group">
+        <button type="button" data-setting-font="classique">Classique</button>
+        <button type="button" data-setting-font="moderne">Moderne</button>
+      </div>
+    </div>
+
+    <button type="button" class="btn btn-text btn-block" id="settings-reset-btn">Réinitialiser les réglages par défaut</button>
   </div>
 </div>
 
@@ -57,7 +205,10 @@
 <div id="app">
   <div class="topbar">
     <div class="brand"><span class="mark">📒</span> Patrimoine</div>
-    <button class="logout-btn" id="logout-btn">Déconnexion</button>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="settings-btn" title="Personnaliser l'interface">⚙️</button>
+      <button class="logout-btn" id="logout-btn">Déconnexion</button>
+    </div>
   </div>
 
   <nav class="bottom-nav">
@@ -119,7 +270,10 @@
 
     <!-- ---------- COMPTES ---------- -->
     <section id="view-accounts" class="view">
-      <h2 style="margin-bottom:14px;">Mes comptes</h2>
+      <div class="card-title-row" style="border-bottom:none; margin-bottom:14px;">
+        <h2 style="margin-bottom:0;">Mes comptes</h2>
+        <button type="button" class="btn btn-outline btn-sm" id="add-account-btn">+ Ajouter un compte</button>
+      </div>
       <div id="accounts-list"></div>
     </section>
 
@@ -326,6 +480,6 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

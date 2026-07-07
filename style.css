@@ -21,10 +21,61 @@
   --rust-light: #f1ddd0;
   --card-shadow: 0 2px 10px rgba(10, 37, 64, 0.08);
   --radius: 10px;
+  --card-bg: #fffdf6;
 
   --font-serif: 'Lora', Georgia, serif;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  --gap: 16px;
+  --pad: 16px;
+}
+
+/* ============================================================
+   Personnalisation de l'interface (thème / accent / densité / police)
+   Appliquée via des attributs data-* sur <html>, modifiable à tout
+   moment depuis le panneau de réglages.
+   ============================================================ */
+
+html[data-theme="sombre"] {
+  --parchment: #141d27;
+  --parchment-dark: #0e151d;
+  --paper-line: #2a3744;
+  --ink: #eae4d6;
+  --ink-soft: #b7c0c9;
+  --navy: #ecebe3;
+  --navy-deep: #f4ecd8;
+  --card-shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
+  --card-bg: #1b2530;
+}
+
+html[data-theme="clair"] {
+  --parchment: #f7f7f5;
+  --parchment-dark: #eeeeec;
+  --paper-line: #e0e0dc;
+  --ink: #23282f;
+  --ink-soft: #565d66;
+  --navy: #23282f;
+  --navy-deep: #14181d;
+  --card-shadow: 0 1px 6px rgba(20, 24, 29, 0.08);
+  --card-bg: #ffffff;
+}
+html[data-theme="clair"] body { background-image: none; }
+
+html[data-accent="emeraude"] { --gold: #4c7a5c; --gold-light: #7fa98c; }
+html[data-accent="bordeaux"] { --gold: #8a3b3b; --gold-light: #b76a5f; }
+html[data-accent="bleu"] { --gold: #2a4d7a; --gold-light: #5478a0; }
+
+html[data-density="compact"] { --gap: 10px; --pad: 11px; }
+html[data-density="compact"] .card,
+html[data-density="compact"] .account-card { padding: var(--pad); margin-bottom: 10px; }
+html[data-density="compact"] .grid-2,
+html[data-density="compact"] .card-actions-row { gap: var(--gap); }
+
+html[data-font="moderne"] h1, html[data-font="moderne"] h2,
+html[data-font="moderne"] h3, html[data-font="moderne"] h4,
+html[data-font="moderne"] .auth-card h1, html[data-font="moderne"] .onboarding-card h1 {
+  font-family: var(--font-sans);
 }
 
 * { box-sizing: border-box; }
@@ -112,6 +163,19 @@ input, select, textarea {
   font-size: 0.85rem;
 }
 .topbar .logout-btn:hover { background: rgba(244,236,216,0.1); }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.icon-btn {
+  background: transparent;
+  border: 1px solid rgba(244,236,216,0.3);
+  color: var(--parchment);
+  width: 34px; height: 34px;
+  border-radius: 6px;
+  font-size: 1rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: background-color .2s ease, transform .2s ease;
+}
+.icon-btn:hover { background: rgba(244,236,216,0.1); }
+.icon-btn:active { transform: scale(0.92); }
 
 main {
   flex: 1;
@@ -191,7 +255,7 @@ main {
 /* ---------------- Cards ---------------- */
 
 .card {
-  background: #fffdf6;
+  background: var(--card-bg);
   border: 1px solid var(--paper-line);
   border-radius: var(--radius);
   box-shadow: var(--card-shadow);
@@ -269,7 +333,7 @@ main {
   display: flex;
   align-items: center;
   gap: 16px;
-  background: #fffdf6;
+  background: var(--card-bg);
   border: 1px solid var(--paper-line);
   border-left: 5px solid var(--gold);
   border-radius: var(--radius);
@@ -366,7 +430,7 @@ main {
 /* ---------------- Comptes ---------------- */
 
 .account-card {
-  background: #fffdf6;
+  background: var(--card-bg);
   border: 1px solid var(--paper-line);
   border-left: 5px solid var(--account-color, var(--gold));
   border-radius: var(--radius);
@@ -410,7 +474,7 @@ main {
   padding: 7px 9px;
   border: 1px solid var(--paper-line);
   border-radius: 6px;
-  background: #fffefb;
+  background: var(--card-bg);
   font-size: 0.82rem;
 }
 .crypto-row input {
@@ -418,7 +482,7 @@ main {
   padding: 7px 9px;
   border: 1px solid var(--paper-line);
   border-radius: 6px;
-  background: #fffefb;
+  background: var(--card-bg);
   font-size: 0.82rem;
   font-family: var(--font-mono);
 }
@@ -492,7 +556,7 @@ main {
   padding: 9px 11px;
   border: 1px solid var(--paper-line);
   border-radius: 7px;
-  background: #fffefb;
+  background: var(--card-bg);
   font-size: 0.92rem;
   color: var(--ink);
 }
@@ -505,9 +569,11 @@ main {
 
 .toggle-group { display: flex; border: 1px solid var(--paper-line); border-radius: 7px; overflow: hidden; }
 .toggle-group button {
-  flex: 1; padding: 9px; background: #fffefb; border: none; font-size: 0.85rem; font-weight: 600;
+  flex: 1; padding: 9px; background: var(--card-bg); border: none; font-size: 0.85rem; font-weight: 600;
   color: var(--ink-soft);
+  transition: background-color .2s ease, color .2s ease;
 }
+.toggle-group button.active { background: var(--gold); color: #fff; }
 .toggle-group button.active.in { background: var(--sage-light); color: var(--sage); }
 .toggle-group button.active.out { background: var(--rust-light); color: var(--rust); }
 
@@ -554,7 +620,7 @@ main {
 }
 .auth-card, .onboarding-card {
   width: 100%; max-width: 420px;
-  background: #fffdf6;
+  background: var(--card-bg);
   border: 1px solid var(--paper-line);
   border-radius: 14px;
   box-shadow: 0 6px 24px rgba(10,37,64,0.12);
@@ -647,7 +713,7 @@ main {
 /* ---------------- Journal ---------------- */
 
 .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-.filter-bar select { padding: 8px 10px; border: 1px solid var(--paper-line); border-radius: 7px; background: #fffefb; }
+.filter-bar select { padding: 8px 10px; border: 1px solid var(--paper-line); border-radius: 7px; background: var(--card-bg); }
 
 .journal-row {
   display: flex; align-items: center; gap: 12px;
