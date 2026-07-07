@@ -687,6 +687,12 @@ function renderDashboard() {
   renderEvolutionChart();
   renderRecentMovements();
   renderStreakAndBadges();
+  renderQuests();
+  const { newlyUnlocked } = syncCardCollection();
+  if (newlyUnlocked.length) {
+    const names = newlyUnlocked.map(id => allCardDefs().find(c => c.id === id)?.name).filter(Boolean);
+    showToast(`🎴 Nouvelle carte débloquée : ${names.join(", ")} !`);
+  }
 }
 
 /* ---------------------------------------------------------- */
@@ -2014,6 +2020,509 @@ async function generateMonthlyReportPDF() {
   doc.text(lines, margin, y);
 
   doc.save(`rapport-patrimoine-${todayISO()}.pdf`);
+}
+
+/* ---------------------------------------------------------- */
+/*  Système de jeu : stockage local par utilisateur              */
+/* ---------------------------------------------------------- */
+// Les 4 fonctionnalités ci-dessous (collection de cartes, quêtes hebdo,
+// Patrimoine Wrapped, easter egg rétro) sont des mécaniques ludiques
+// greffées sur les données déjà synchronisées via Supabase (comptes,
+// mouvements). Leur propre état (cartes débloquées, progression des
+// quêtes) est volontairement stocké en local (par appareil) : ce sont des
+// à-côtés, pas des données financières, donc pas besoin de schéma Supabase
+// ni de synchronisation multi-appareil pour cette première version.
+
+function currentUserId() {
+  return state.session?.user?.id || "anon";
+}
+function gameStorageGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (e) { return fallback; }
+}
+function gameStorageSet(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+}
+
+function isoWeekKey(d = new Date()) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+function startOfISOWeek(d = new Date()) {
+  const date = new Date(d);
+  const day = date.getDay() || 7;
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - day + 1);
+  return date;
+}
+
+/* ------------------------- Collection de cartes ------------------------- */
+
+const CARD_CATALOG = [
+  { id: "premier-pas", icon: "🌱", name: "Premier pas", rarity: "commune", desc: "Enregistrer votre tout premier mouvement.", check: c => c.movementsCount >= 1 },
+  { id: "streak-3", icon: "🔥", name: "Épargnant assidu", rarity: "commune", desc: "3 mois d'affilée d'épargne en hausse.", check: c => c.streakCtx.maxStreak >= 3 },
+  { id: "quatre-comptes", icon: "💼", name: "Grand organisateur", rarity: "commune", desc: "Gérer au moins 4 comptes.", check: c => c.accountsCount >= 4 },
+  { id: "journal-25", icon: "📜", name: "Habitué du journal", rarity: "commune", desc: "Enregistrer 25 mouvements ou plus.", check: c => c.movementsCount >= 25 },
+  { id: "trois-piliers", icon: "🏛️", name: "Trois piliers", rarity: "rare", desc: "Posséder un compte épargne, un compte investissement et un compte crypto.", check: c => c.hasEpargne && c.hasInvestissement && c.hasCrypto },
+  { id: "plafond", icon: "🏆", name: "Plafond dompté", rarity: "rare", desc: "Atteindre le plafond du Livret A.", check: c => c.streakCtx.livretACapped },
+  { id: "doubled", icon: "🚀", name: "Patrimoine doublé", rarity: "rare", desc: "Doubler votre patrimoine total depuis le premier mouvement.", check: c => c.streakCtx.doubled },
+  { id: "veteran", icon: "🕰️", name: "Vétéran", rarity: "rare", desc: "Suivre votre patrimoine depuis plus de 6 mois.", check: c => c.oldestDays >= 180 },
+  { id: "serenite", icon: "🧘", name: "Sérénité budgétaire", rarity: "rare", desc: "Configurer au moins un abonnement récurrent actif.", check: c => c.hasRecurring },
+  { id: "crypto-actif", icon: "🪙", name: "Investisseur crypto", rarity: "rare", desc: "Détenir une quantité de crypto renseignée.", check: c => c.cryptoActive },
+  { id: "quetes-10", icon: "🎯", name: "Chasseur de quêtes", rarity: "epique", desc: "Réussir 10 quêtes hebdomadaires.", check: c => c.questsCompletedTotal >= 10 },
+  { id: "streak-6", icon: "🔥🔥", name: "Six mois d'affilée", rarity: "epique", desc: "6 mois d'affilée d'épargne en hausse.", check: c => c.streakCtx.maxStreak >= 6 },
+  { id: "cinq-mille", icon: "💎", name: "Cap des 5 000 €", rarity: "epique", desc: "Atteindre 5 000 € de patrimoine total.", check: c => c.totalPatrimoine >= 5000 },
+  { id: "vingt-cinq-mille", icon: "👑", name: "Riche et prospère", rarity: "legendaire", desc: "Atteindre 25 000 € de patrimoine total.", check: c => c.totalPatrimoine >= 25000 },
+];
+const ULTIMATE_CARD = { id: "ultime", icon: "🏵️", name: "Maître du Patrimoine", rarity: "ultime", desc: "Débloquer toutes les autres cartes de la collection." };
+
+function allCardDefs() { return [...CARD_CATALOG, ULTIMATE_CARD]; }
+function cardsKey() { return `patrimoine_cards_${currentUserId()}`; }
+function questsTotalKey() { return `patrimoine_quests_total_${currentUserId()}`; }
+
+function buildGameContext() {
+  const streakCtx = computeStreakContext();
+  const types = new Set(state.accounts.map(a => a.type));
+  const cryptoWithQty = state.accounts.filter(a => a.type === "crypto" && a.crypto_quantity != null && Number(a.crypto_quantity) > 0);
+  const allDates = state.movements.map(m => m.date).sort();
+  const oldestDays = allDates.length
+    ? Math.floor((Date.now() - new Date(allDates[0] + "T00:00:00").getTime()) / 86400000)
+    : 0;
+  return {
+    streakCtx,
+    totalPatrimoine: totalPatrimoine(),
+    accountsCount: state.accounts.length,
+    hasEpargne: types.has("epargne_reglementee"),
+    hasInvestissement: types.has("investissement"),
+    hasCrypto: types.has("crypto"),
+    cryptoActive: cryptoWithQty.length > 0,
+    hasRecurring: state.recurringExpenses.some(r => r.active),
+    movementsCount: state.movements.length,
+    oldestDays,
+    questsCompletedTotal: gameStorageGet(questsTotalKey(), 0),
+  };
+}
+
+function computeUnlockedCardIds() {
+  const ctx = buildGameContext();
+  const unlocked = CARD_CATALOG.filter(c => c.check(ctx)).map(c => c.id);
+  if (unlocked.length === CARD_CATALOG.length) unlocked.push(ULTIMATE_CARD.id);
+  return unlocked;
+}
+
+function syncCardCollection() {
+  const stored = gameStorageGet(cardsKey(), []);
+  const storedIds = new Set(stored.map(x => x.id));
+  const nowUnlocked = computeUnlockedCardIds();
+  const newlyUnlocked = [];
+  nowUnlocked.forEach(id => {
+    if (!storedIds.has(id)) {
+      stored.push({ id, unlockedAt: new Date().toISOString() });
+      newlyUnlocked.push(id);
+    }
+  });
+  if (newlyUnlocked.length) gameStorageSet(cardsKey(), stored);
+  return { stored, newlyUnlocked };
+}
+
+function renderCollectionModal() {
+  const { stored } = syncCardCollection();
+  const unlockedIds = new Set(stored.map(x => x.id));
+  const defs = allCardDefs();
+  document.getElementById("collection-progress").textContent = `${unlockedIds.size} / ${defs.length} cartes débloquées`;
+  const grid = document.getElementById("card-grid");
+  grid.innerHTML = defs.map(c => {
+    const unlocked = unlockedIds.has(c.id);
+    return `
+      <div class="collect-card ${unlocked ? "unlocked rarity-" + c.rarity : "locked"}" data-card-id="${c.id}">
+        <div class="cc-icon">${unlocked ? c.icon : "❔"}</div>
+        <div class="cc-name">${unlocked ? c.name : "???"}</div>
+      </div>
+    `;
+  }).join("");
+  grid.querySelectorAll(".collect-card").forEach(el => {
+    el.addEventListener("click", () => openCardDetail(el.dataset.cardId, unlockedIds.has(el.dataset.cardId)));
+  });
+}
+
+function openCardDetail(cardId, unlocked) {
+  const def = allCardDefs().find(c => c.id === cardId);
+  if (!def) return;
+  const content = document.getElementById("card-detail-content");
+  content.innerHTML = unlocked
+    ? `
+      <div class="cd-icon">${def.icon}</div>
+      <div class="cd-name">${def.name}</div>
+      <div class="cd-rarity">${def.rarity}</div>
+      <div class="cd-desc">${def.desc}</div>
+    `
+    : `
+      <div class="cd-icon">❔</div>
+      <div class="cd-name">Carte verrouillée</div>
+      <div class="cd-rarity">???</div>
+      <div class="cd-desc">${def.desc}</div>
+    `;
+  document.getElementById("card-detail-modal").classList.add("open");
+}
+
+document.getElementById("open-collection-btn").addEventListener("click", () => {
+  document.getElementById("collection-modal").classList.add("open");
+  renderCollectionModal();
+});
+document.getElementById("collection-modal-close").addEventListener("click", () => document.getElementById("collection-modal").classList.remove("open"));
+document.getElementById("collection-modal").addEventListener("click", (e) => {
+  if (e.target.id === "collection-modal") document.getElementById("collection-modal").classList.remove("open");
+});
+document.getElementById("card-detail-close").addEventListener("click", () => document.getElementById("card-detail-modal").classList.remove("open"));
+document.getElementById("card-detail-modal").addEventListener("click", (e) => {
+  if (e.target.id === "card-detail-modal") document.getElementById("card-detail-modal").classList.remove("open");
+});
+
+/* ------------------------- Quêtes hebdomadaires ------------------------- */
+
+function questsKey() { return `patrimoine_quests_${currentUserId()}`; }
+
+function buildQuestContext() {
+  const weekStartStr = toLocalISODate(startOfISOWeek(new Date()));
+  const weekMovements = state.movements.filter(m => m.date >= weekStartStr && m.date <= todayISO());
+
+  const savingsMovementsThisWeek = weekMovements.filter(m => {
+    const acc = accountById(m.account_id);
+    return acc && acc.type !== "courant" && Number(m.amount) > 0;
+  }).length;
+
+  const movementsThisWeek = weekMovements.length;
+
+  const acc = courantAccount();
+  let topCategory = "Autre", categoryBudget = 30, categorySpendThisWeek = 0;
+  if (acc) {
+    const historyExpenses = state.movements.filter(m => m.account_id === acc.id && Number(m.amount) < 0 && !m.is_initial);
+    const byCat = {};
+    historyExpenses.forEach(m => {
+      const cat = m.category || "Autre";
+      byCat[cat] = (byCat[cat] || 0) + Math.abs(Number(m.amount));
+    });
+    const sorted = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+    if (sorted.length) {
+      topCategory = sorted[0][0];
+      const eightWeeksAgoStr = toLocalISODate(new Date(Date.now() - 56 * 86400000));
+      const recentTotal = historyExpenses
+        .filter(m => (m.category || "Autre") === topCategory && m.date >= eightWeeksAgoStr)
+        .reduce((s, m) => s + Math.abs(Number(m.amount)), 0);
+      categoryBudget = Math.max(10, Math.round(recentTotal / 8));
+    }
+    categorySpendThisWeek = weekMovements
+      .filter(m => m.account_id === acc.id && Number(m.amount) < 0 && (m.category || "Autre") === topCategory)
+      .reduce((s, m) => s + Math.abs(Number(m.amount)), 0);
+  }
+
+  return { weekStartStr, savingsMovementsThisWeek, movementsThisWeek, topCategory, categoryBudget, categorySpendThisWeek };
+}
+
+function generateWeeklyQuests(ctx) {
+  return [
+    {
+      id: "epargne-semaine",
+      title: "Épargner cette semaine",
+      desc: "Enregistrez un versement positif sur un compte autre que le compte courant.",
+      progress: Math.min(ctx.savingsMovementsThisWeek, 1),
+      target: 1,
+      completed: ctx.savingsMovementsThisWeek >= 1,
+    },
+    {
+      id: "budget-categorie",
+      title: `Rester sous ${formatEUR(ctx.categoryBudget)} en ${ctx.topCategory}`,
+      desc: `Basé sur votre moyenne récente en ${ctx.topCategory}.`,
+      progress: Math.min(ctx.categorySpendThisWeek, ctx.categoryBudget),
+      target: ctx.categoryBudget,
+      completed: ctx.categorySpendThisWeek <= ctx.categoryBudget,
+    },
+    {
+      id: "journal-actif",
+      title: "Tenir son journal à jour",
+      desc: "Ajoutez au moins 2 mouvements cette semaine.",
+      progress: Math.min(ctx.movementsThisWeek, 2),
+      target: 2,
+      completed: ctx.movementsThisWeek >= 2,
+    },
+  ];
+}
+
+function loadOrCreateWeekQuests() {
+  const wk = isoWeekKey();
+  const ctx = buildQuestContext();
+  let stored = gameStorageGet(questsKey(), null);
+  const fresh = generateWeeklyQuests(ctx);
+
+  if (!stored || stored.weekKey !== wk) {
+    stored = { weekKey: wk, quests: fresh.map(q => ({ ...q, counted: false })) };
+  } else {
+    stored.quests = stored.quests.map(old => {
+      const upd = fresh.find(q => q.id === old.id) || old;
+      return { ...upd, completed: old.completed || upd.completed, counted: old.counted };
+    });
+  }
+
+  const justCompleted = [];
+  stored.quests.forEach(q => {
+    if (q.completed && !q.counted) {
+      q.counted = true;
+      justCompleted.push(q);
+      gameStorageSet(questsTotalKey(), gameStorageGet(questsTotalKey(), 0) + 1);
+    }
+  });
+  gameStorageSet(questsKey(), stored);
+  return { stored, justCompleted };
+}
+
+function renderQuests() {
+  const { stored, justCompleted } = loadOrCreateWeekQuests();
+  document.getElementById("quests-week-label").textContent = "Semaine " + (stored.weekKey.split("-W")[1] || "");
+  const el = document.getElementById("quests-list");
+  el.innerHTML = stored.quests.map(q => `
+    <div class="quest-row ${q.completed ? "done" : ""}">
+      <div class="quest-check">✓</div>
+      <div class="quest-mid">
+        <div class="quest-title">${q.title}</div>
+        <div class="quest-desc">${q.desc}</div>
+        <div class="quest-progress-wrap"><div class="quest-progress-bar" style="width:${Math.min(100, (q.progress / q.target) * 100)}%"></div></div>
+      </div>
+    </div>
+  `).join("");
+  if (justCompleted.length) {
+    showToast(`🎯 Quête réussie : ${justCompleted.map(q => q.title).join(", ")} !`);
+  }
+}
+
+/* ------------------------- Patrimoine Wrapped ------------------------- */
+
+function quarterOfDate(d) { return Math.floor(d.getMonth() / 3); }
+function quarterBounds(year, q) {
+  return { start: new Date(year, q * 3, 1), end: new Date(year, q * 3 + 3, 0) };
+}
+function quarterLabel(year, q) { return `T${q + 1} ${year}`; }
+function defaultWrappedQuarter() {
+  const now = new Date();
+  const q = quarterOfDate(now);
+  const year = now.getFullYear();
+  return q === 0 ? { year: year - 1, q: 3 } : { year, q: q - 1 };
+}
+
+function computeWrappedStats(year, q) {
+  const { start, end } = quarterBounds(year, q);
+  const startStr = toLocalISODate(start);
+  const clampedEndStr = end > new Date() ? todayISO() : toLocalISODate(end);
+
+  const totalAt = (dateStr) => state.accounts.reduce((sum, a) => {
+    const bal = state.movements.filter(m => m.account_id === a.id && m.date <= dateStr).reduce((s, m) => s + Number(m.amount), 0);
+    return sum + bal;
+  }, 0);
+  const dayBeforeStartStr = toLocalISODate(new Date(start.getTime() - 86400000));
+  const totalStart = totalAt(dayBeforeStartStr);
+  const totalEnd = totalAt(clampedEndStr);
+
+  const monthsInQ = [0, 1, 2].map(i => new Date(year, q * 3 + i, 1));
+  let bestMonth = null, bestDelta = -Infinity;
+  monthsInQ.forEach(m => {
+    const monthEndDate = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+    const monthEndStr = monthEndDate > new Date() ? todayISO() : toLocalISODate(monthEndDate);
+    const beforeStr = toLocalISODate(new Date(startOfMonth(m).getTime() - 86400000));
+    const delta = nonCourantBalanceAsOf(monthEndStr) - nonCourantBalanceAsOf(beforeStr);
+    if (delta > bestDelta) { bestDelta = delta; bestMonth = m; }
+  });
+
+  const acc = courantAccount();
+  let topCategory = null, topCategoryTotal = 0;
+  if (acc) {
+    const byCat = {};
+    state.movements
+      .filter(m => m.account_id === acc.id && Number(m.amount) < 0 && !m.is_initial && m.date >= startStr && m.date <= clampedEndStr)
+      .forEach(m => {
+        const cat = m.category || "Autre";
+        byCat[cat] = (byCat[cat] || 0) + Math.abs(Number(m.amount));
+      });
+    const sorted = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+    if (sorted.length) { topCategory = sorted[0][0]; topCategoryTotal = sorted[0][1]; }
+  }
+
+  const cryptoAccounts = state.accounts.filter(a => a.type === "crypto" && a.crypto_quantity != null && a.crypto_price_eur != null);
+  const cryptoValueNow = cryptoAccounts.reduce((s, a) => s + Number(a.crypto_quantity) * Number(a.crypto_price_eur), 0);
+
+  const streakCtx = computeStreakContext();
+
+  return {
+    year, q,
+    totalDelta: totalEnd - totalStart, totalEnd,
+    bestMonth, bestDelta: bestDelta === -Infinity ? 0 : bestDelta,
+    topCategory, topCategoryTotal,
+    cryptoAccountsCount: cryptoAccounts.length, cryptoValueNow,
+    maxStreak: streakCtx.maxStreak,
+  };
+}
+
+let wrappedState = { year: 0, q: 0, slideIndex: 0, slides: [] };
+
+function openWrapped() {
+  const def = defaultWrappedQuarter();
+  wrappedState.year = def.year;
+  wrappedState.q = def.q;
+  wrappedState.slideIndex = 0;
+  document.getElementById("wrapped-modal").classList.add("open");
+  renderWrapped();
+}
+
+function renderWrapped() {
+  const stats = computeWrappedStats(wrappedState.year, wrappedState.q);
+  document.getElementById("wrapped-quarter-label").textContent = quarterLabel(stats.year, stats.q);
+
+  const slides = [];
+  slides.push({
+    bg: "ws-bg-1", eyebrow: "Patrimoine Wrapped",
+    headline: `Votre trimestre ${quarterLabel(stats.year, stats.q)}`,
+    figure: formatEUR(stats.totalEnd),
+    sub: `${stats.totalDelta >= 0 ? "En hausse" : "En baisse"} de ${formatEUR(Math.abs(stats.totalDelta))} sur le trimestre.`,
+  });
+  slides.push({
+    bg: "ws-bg-2", eyebrow: "Meilleur mois",
+    headline: stats.bestMonth ? capitalize(monthLabel(stats.bestMonth)) : "Pas encore de données",
+    figure: stats.bestMonth ? `${stats.bestDelta >= 0 ? "+" : ""}${formatEUR(stats.bestDelta)}` : "—",
+    sub: "Votre mois le plus fort en épargne (hors compte courant) ce trimestre.",
+  });
+  slides.push({
+    bg: "ws-bg-3", eyebrow: "Catégorie qui explose",
+    headline: stats.topCategory || "Aucune dépense",
+    figure: stats.topCategory ? formatEUR(stats.topCategoryTotal) : "—",
+    sub: stats.topCategory ? "Votre plus grosse dépense du trimestre." : "Aucune dépense enregistrée ce trimestre.",
+  });
+  if (stats.cryptoAccountsCount > 0) {
+    slides.push({
+      bg: "ws-bg-4", eyebrow: "Vos cryptos",
+      headline: "Valeur actuelle de vos actifs crypto",
+      figure: formatEUR(stats.cryptoValueNow),
+      sub: "Basé sur vos quantités détenues et le dernier cours actualisé.",
+    });
+  }
+  slides.push({
+    bg: "ws-bg-5", eyebrow: "Record",
+    headline: "Votre plus longue série d'épargne",
+    figure: `${stats.maxStreak} mois`,
+    sub: "Le record de mois consécutifs d'épargne en hausse, tous temps confondus.",
+  });
+
+  wrappedState.slides = slides;
+  if (wrappedState.slideIndex >= slides.length) wrappedState.slideIndex = 0;
+
+  document.getElementById("wrapped-slides").innerHTML = slides.map((s, i) => `
+    <div class="wrapped-slide ${s.bg} ${i === wrappedState.slideIndex ? "active" : ""}">
+      <div class="ws-eyebrow">${s.eyebrow}</div>
+      <div class="ws-headline">${s.headline}</div>
+      <div class="ws-figure">${s.figure}</div>
+      <div class="ws-sub">${s.sub}</div>
+    </div>
+  `).join("");
+
+  document.getElementById("wrapped-progress-bar").innerHTML = slides.map((s, i) => `
+    <div class="seg ${i < wrappedState.slideIndex ? "done" : i === wrappedState.slideIndex ? "active" : ""}"><div class="fill"></div></div>
+  `).join("");
+}
+
+function wrappedGoTo(delta) {
+  const slides = wrappedState.slides || [];
+  if (!slides.length) return;
+  wrappedState.slideIndex = Math.max(0, Math.min(slides.length - 1, wrappedState.slideIndex + delta));
+  renderWrapped();
+}
+
+document.getElementById("open-wrapped-btn").addEventListener("click", openWrapped);
+document.getElementById("wrapped-close").addEventListener("click", () => document.getElementById("wrapped-modal").classList.remove("open"));
+document.getElementById("wrapped-modal").addEventListener("click", (e) => {
+  if (e.target.id === "wrapped-modal") document.getElementById("wrapped-modal").classList.remove("open");
+});
+document.getElementById("wrapped-nav-prev").addEventListener("click", () => wrappedGoTo(-1));
+document.getElementById("wrapped-nav-next").addEventListener("click", () => wrappedGoTo(1));
+document.getElementById("wrapped-quarter-prev").addEventListener("click", () => {
+  wrappedState.q -= 1;
+  if (wrappedState.q < 0) { wrappedState.q = 3; wrappedState.year -= 1; }
+  wrappedState.slideIndex = 0;
+  renderWrapped();
+});
+document.getElementById("wrapped-quarter-next").addEventListener("click", () => {
+  wrappedState.q += 1;
+  if (wrappedState.q > 3) { wrappedState.q = 0; wrappedState.year += 1; }
+  wrappedState.slideIndex = 0;
+  renderWrapped();
+});
+document.getElementById("wrapped-share-btn").addEventListener("click", async () => {
+  const stats = computeWrappedStats(wrappedState.year, wrappedState.q);
+  const text = [
+    `📒 Patrimoine Wrapped — ${quarterLabel(stats.year, stats.q)}`,
+    `💰 Patrimoine total : ${formatEUR(stats.totalEnd)} (${stats.totalDelta >= 0 ? "+" : ""}${formatEUR(stats.totalDelta)} sur le trimestre)`,
+    stats.bestMonth ? `📈 Meilleur mois : ${capitalize(monthLabel(stats.bestMonth))} (${stats.bestDelta >= 0 ? "+" : ""}${formatEUR(stats.bestDelta)})` : null,
+    stats.topCategory ? `🧾 Catégorie qui explose : ${stats.topCategory} (${formatEUR(stats.topCategoryTotal)})` : null,
+    stats.cryptoAccountsCount > 0 ? `🪙 Valeur crypto actuelle : ${formatEUR(stats.cryptoValueNow)}` : null,
+    `🔥 Record de série d'épargne : ${stats.maxStreak} mois`,
+  ].filter(Boolean).join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("Résumé copié dans le presse-papiers !");
+  } catch (e) {
+    showToast("Impossible de copier automatiquement.", true);
+  }
+});
+
+/* ------------------------- Easter egg rétro 8-bit ------------------------- */
+
+let brandTapCount = 0;
+let brandTapTimer = null;
+document.getElementById("brand-logo").addEventListener("click", () => {
+  brandTapCount++;
+  clearTimeout(brandTapTimer);
+  brandTapTimer = setTimeout(() => { brandTapCount = 0; }, 2500);
+  if (brandTapCount >= 5) {
+    brandTapCount = 0;
+    clearTimeout(brandTapTimer);
+    triggerPixelEasterEgg();
+  }
+});
+
+function playChiptune() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const notes = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5];
+    let t = ctx.currentTime;
+    notes.forEach((freq) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.12);
+      t += 0.11;
+    });
+    setTimeout(() => ctx.close(), 1500);
+  } catch (e) { /* AudioContext indisponible : on continue sans son */ }
+}
+
+function triggerPixelEasterEgg() {
+  document.body.classList.add("pixel-mode");
+  document.getElementById("pixel-overlay").classList.add("active");
+  playChiptune();
+  showToast("★ Mode rétro activé ★");
+  setTimeout(() => {
+    document.body.classList.remove("pixel-mode");
+    document.getElementById("pixel-overlay").classList.remove("active");
+  }, 5000);
 }
 
 /* ---------------------------------------------------------- */
