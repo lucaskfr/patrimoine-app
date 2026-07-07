@@ -8,7 +8,7 @@
 // s'applique qu'une seule fois par chargement de page (pas à chaque re-boot
 // interne, par ex. après l'ajout d'un compte).
 const APP_BOOT_START = Date.now();
-const MIN_SPLASH_MS = 2600;
+const MIN_SPLASH_MS = 1000;
 let splashAlreadyShown = false;
 function hideLoadingScreen() {
   const el = document.getElementById("loading");
