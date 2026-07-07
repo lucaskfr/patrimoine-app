@@ -23,22 +23,27 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
 <div id="loading" class="loading-screen">
   <div class="boot-grid"></div>
+  <div class="boot-scan"></div>
   <div class="boot-core">
+    <div class="boot-pings"><div class="boot-ping"></div><div class="boot-ping"></div><div class="boot-ping"></div></div>
     <svg class="boot-ring" viewBox="0 0 120 120" aria-hidden="true">
       <circle class="boot-ring-track" cx="60" cy="60" r="52"></circle>
+      <circle class="boot-ring-track" cx="60" cy="60" r="40"></circle>
       <circle class="boot-ring-sweep" cx="60" cy="60" r="52"></circle>
       <circle class="boot-ring-sweep boot-ring-sweep-2" cx="60" cy="60" r="40"></circle>
+      <circle class="boot-ring-sweep boot-ring-sweep-3" cx="60" cy="60" r="58"></circle>
       <text class="boot-mark" x="60" y="70" text-anchor="middle">📒</text>
     </svg>
     <div class="boot-title" aria-label="Patrimoine">
       <span style="--i:0">P</span><span style="--i:1">a</span><span style="--i:2">t</span><span style="--i:3">r</span><span style="--i:4">i</span><span style="--i:5">m</span><span style="--i:6">o</span><span style="--i:7">i</span><span style="--i:8">n</span><span style="--i:9">e</span>
     </div>
+    <div class="boot-tagline">Votre patrimoine, en un coup d'œil</div>
     <div class="boot-bar"><div class="boot-bar-fill"></div></div>
   </div>
 </div>
@@ -286,7 +291,10 @@
     <section id="view-accounts" class="view">
       <div class="card-title-row" style="border-bottom:none; margin-bottom:14px;">
         <h2 style="margin-bottom:0;">Mes comptes</h2>
-        <button type="button" class="btn btn-outline btn-sm" id="add-account-btn">+ Ajouter un compte</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn btn-text btn-sm" id="refresh-all-crypto-btn" title="Actualiser tous les cours crypto">↻ Actualiser les cours</button>
+          <button type="button" class="btn btn-outline btn-sm" id="add-account-btn">+ Ajouter un compte</button>
+        </div>
       </div>
       <div id="accounts-list"></div>
     </section>
@@ -494,6 +502,6 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

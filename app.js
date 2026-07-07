@@ -3,6 +3,22 @@
 // Vanilla JS, Supabase (DB + Auth), Chart.js
 // ============================================================
 
+// L'animation de démarrage doit rester visible un minimum de temps pour être
+// perceptible, même quand les données se chargent très vite. Ce garde-fou ne
+// s'applique qu'une seule fois par chargement de page (pas à chaque re-boot
+// interne, par ex. après l'ajout d'un compte).
+const APP_BOOT_START = Date.now();
+const MIN_SPLASH_MS = 2600;
+let splashAlreadyShown = false;
+function hideLoadingScreen() {
+  const el = document.getElementById("loading");
+  if (!el) return;
+  if (splashAlreadyShown) { el.style.display = "none"; return; }
+  splashAlreadyShown = true;
+  const remaining = Math.max(0, MIN_SPLASH_MS - (Date.now() - APP_BOOT_START));
+  setTimeout(() => { el.style.display = "none"; }, remaining);
+}
+
 /* ---------------------------------------------------------- */
 /*  Setup                                                       */
 /* ---------------------------------------------------------- */
@@ -355,7 +371,7 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
 sb.auth.onAuthStateChange((event, session) => {
   state.session = session;
   if (event === "PASSWORD_RECOVERY") {
-    document.getElementById("loading").style.display = "none";
+    hideLoadingScreen();
     document.getElementById("auth-screen").style.display = "none";
     document.getElementById("app").classList.remove("visible");
     document.getElementById("reset-password-screen").style.display = "flex";
@@ -364,7 +380,7 @@ sb.auth.onAuthStateChange((event, session) => {
   if (session) {
     boot();
   } else {
-    document.getElementById("loading").style.display = "none";
+    hideLoadingScreen();
     document.getElementById("app").classList.remove("visible");
     document.getElementById("onboarding-screen").style.display = "none";
     document.getElementById("auth-screen").style.display = "flex";
@@ -403,7 +419,7 @@ async function bootInner() {
   if (accErr || movErr) {
     showToast("Erreur de chargement des données.", true);
     console.error(accErr, movErr);
-    document.getElementById("loading").style.display = "none";
+    hideLoadingScreen();
     return;
   }
   if (recErr) console.warn("Abonnements récurrents indisponibles :", recErr.message);
@@ -412,7 +428,7 @@ async function bootInner() {
   state.movements = movements || [];
   state.recurringExpenses = recurring || [];
 
-  document.getElementById("loading").style.display = "none";
+  hideLoadingScreen();
 
   if (state.accounts.length === 0) {
     showOnboarding();
@@ -880,16 +896,48 @@ function escapeHTML(str) {
 /*  Comptes                                                      */
 /* ---------------------------------------------------------- */
 
+// Liste de secours utilisée tant que la liste complète CoinGecko n'a pas
+// encore été chargée (recherche live sur ~15 000 cryptos, voir plus bas).
 const CRYPTO_COINS = [
-  { id: "bitcoin", label: "Bitcoin (BTC)" },
-  { id: "ethereum", label: "Ethereum (ETH)" },
-  { id: "solana", label: "Solana (SOL)" },
-  { id: "cardano", label: "Cardano (ADA)" },
-  { id: "ripple", label: "XRP" },
-  { id: "litecoin", label: "Litecoin (LTC)" },
-  { id: "dogecoin", label: "Dogecoin (DOGE)" },
-  { id: "polkadot", label: "Polkadot (DOT)" },
+  { id: "bitcoin", symbol: "btc", name: "Bitcoin" },
+  { id: "ethereum", symbol: "eth", name: "Ethereum" },
+  { id: "solana", symbol: "sol", name: "Solana" },
+  { id: "cardano", symbol: "ada", name: "Cardano" },
+  { id: "ripple", symbol: "xrp", name: "XRP" },
+  { id: "litecoin", symbol: "ltc", name: "Litecoin" },
+  { id: "dogecoin", symbol: "doge", name: "Dogecoin" },
+  { id: "polkadot", symbol: "dot", name: "Polkadot" },
 ];
+
+function coinLabel(c) { return `${c.name} (${c.symbol.toUpperCase()})`; }
+
+// Liste complète des cryptos CoinGecko, chargée une seule fois par session
+// (API publique, gratuite, sans clé) et mise en cache en mémoire.
+let fullCoinListPromise = null;
+function loadFullCoinList() {
+  if (!fullCoinListPromise) {
+    fullCoinListPromise = fetch("https://api.coingecko.com/api/v3/coins/list")
+      .then(res => { if (!res.ok) throw new Error("Liste des cryptos indisponible"); return res.json(); })
+      .catch(err => { fullCoinListPromise = null; throw err; });
+  }
+  return fullCoinListPromise;
+}
+
+function searchCoins(list, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const starts = [];
+  const contains = [];
+  for (const c of list) {
+    const nameL = c.name.toLowerCase();
+    const symL = c.symbol.toLowerCase();
+    if (symL === q) { starts.unshift(c); continue; }
+    if (nameL.startsWith(q) || symL.startsWith(q)) starts.push(c);
+    else if (nameL.includes(q)) contains.push(c);
+    if (starts.length >= 8) break;
+  }
+  return [...starts, ...contains].slice(0, 8);
+}
 
 function relativeTimeFromNow(iso) {
   if (!iso) return "jamais mis à jour";
@@ -904,14 +952,18 @@ function relativeTimeFromNow(iso) {
 }
 
 function cryptoBoxHTML(a) {
-  const coin = a.crypto_coin_id || "bitcoin";
+  const coinId = a.crypto_coin_id || "bitcoin";
+  const label = a.crypto_coin_label || (coinId === "bitcoin" ? "Bitcoin (BTC)" : coinId);
   const qty = a.crypto_quantity != null ? a.crypto_quantity : "";
   return `
     <div class="crypto-box">
       <div class="crypto-row">
-        <select class="crypto-coin-select" data-account="${a.id}">
-          ${CRYPTO_COINS.map(c => `<option value="${c.id}" ${c.id === coin ? "selected" : ""}>${c.label}</option>`).join("")}
-        </select>
+        <div class="crypto-coin-search">
+          <input type="text" class="crypto-coin-input" data-account="${a.id}" value="${label}" placeholder="Rechercher une crypto (nom ou symbole)…" autocomplete="off">
+          <input type="hidden" class="crypto-coin-id" data-account="${a.id}" value="${coinId}">
+          <input type="hidden" class="crypto-coin-label" data-account="${a.id}" value="${label}">
+          <div class="crypto-coin-results" data-account="${a.id}"></div>
+        </div>
         <input type="number" step="0.00000001" min="0" class="crypto-qty-input" data-account="${a.id}" placeholder="Quantité détenue" value="${qty}">
         <button class="btn btn-outline btn-sm" data-action="crypto-save" data-account="${a.id}">Enregistrer</button>
       </div>
@@ -925,17 +977,73 @@ function cryptoBoxHTML(a) {
   `;
 }
 
+function wireCryptoCoinSearch(container) {
+  container.querySelectorAll(".crypto-coin-input").forEach(input => {
+    const accountId = input.dataset.account;
+    const resultsEl = container.querySelector(`.crypto-coin-results[data-account="${accountId}"]`);
+    const idInput = container.querySelector(`.crypto-coin-id[data-account="${accountId}"]`);
+    const labelInput = container.querySelector(`.crypto-coin-label[data-account="${accountId}"]`);
+    let debounceTimer = null;
+
+    input.addEventListener("focus", () => { input.select(); });
+    input.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      const query = input.value;
+      debounceTimer = setTimeout(async () => {
+        if (query.trim().length < 2) { resultsEl.innerHTML = ""; resultsEl.classList.remove("open"); return; }
+        let list;
+        try {
+          resultsEl.innerHTML = `<div class="crypto-coin-result-loading">Recherche…</div>`;
+          resultsEl.classList.add("open");
+          list = await loadFullCoinList();
+        } catch (err) {
+          resultsEl.innerHTML = `<div class="crypto-coin-result-loading">Recherche indisponible pour le moment.</div>`;
+          return;
+        }
+        const matches = searchCoins(list, query);
+        if (matches.length === 0) {
+          resultsEl.innerHTML = `<div class="crypto-coin-result-loading">Aucun résultat.</div>`;
+          return;
+        }
+        resultsEl.innerHTML = matches.map(c => `
+          <div class="crypto-coin-result" data-coin-id="${c.id}" data-coin-label="${coinLabel(c)}">
+            ${c.name} <span class="crypto-coin-symbol">${c.symbol.toUpperCase()}</span>
+          </div>
+        `).join("");
+        resultsEl.querySelectorAll(".crypto-coin-result").forEach(row => {
+          row.addEventListener("click", () => {
+            input.value = row.dataset.coinLabel;
+            idInput.value = row.dataset.coinId;
+            labelInput.value = row.dataset.coinLabel;
+            resultsEl.innerHTML = "";
+            resultsEl.classList.remove("open");
+          });
+        });
+      }, 250);
+    });
+  });
+}
+
+// Un seul écouteur global (plutôt qu'un par champ de recherche à chaque
+// rendu) pour fermer les résultats quand on clique en dehors.
+document.addEventListener("click", (e) => {
+  if (e.target.closest(".crypto-coin-search")) return;
+  document.querySelectorAll(".crypto-coin-results.open").forEach(el => el.classList.remove("open"));
+});
+
 async function saveCryptoSettings(accountId) {
-  const coinSel = document.querySelector(`.crypto-coin-select[data-account="${accountId}"]`);
+  const idInput = document.querySelector(`.crypto-coin-id[data-account="${accountId}"]`);
+  const labelInput = document.querySelector(`.crypto-coin-label[data-account="${accountId}"]`);
   const qtyInput = document.querySelector(`.crypto-qty-input[data-account="${accountId}"]`);
-  const coin = coinSel.value;
+  const coin = idInput.value;
+  const label = labelInput.value;
   const qty = qtyInput.value === "" ? null : parseFloat(qtyInput.value);
   if (qty != null && (isNaN(qty) || qty < 0)) {
     showToast("Quantité invalide.", true);
     return;
   }
   const { data, error } = await sb.from("accounts")
-    .update({ crypto_coin_id: coin, crypto_quantity: qty })
+    .update({ crypto_coin_id: coin, crypto_coin_label: label, crypto_quantity: qty })
     .eq("id", accountId).select().single();
   if (error) { showToast("Erreur lors de l'enregistrement.", true); return; }
   state.accounts = state.accounts.map(x => x.id === accountId ? data : x);
@@ -975,6 +1083,25 @@ function autoRefreshStalePrices() {
       if (Date.now() - last > staleMs) refreshCryptoPrice(a.id, { silent: true });
     });
 }
+
+document.getElementById("refresh-all-crypto-btn").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const cryptoAccounts = state.accounts.filter(a => a.type === "crypto" && a.crypto_coin_id);
+  if (cryptoAccounts.length === 0) {
+    showToast("Aucun actif crypto à actualiser.", true);
+    return;
+  }
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = "Actualisation…";
+  try {
+    await Promise.all(cryptoAccounts.map(a => refreshCryptoPrice(a.id, { silent: true })));
+    showToast(`${cryptoAccounts.length} cours actualisé${cryptoAccounts.length > 1 ? "s" : ""}.`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
 
 /* ---------------------------------------------------------- */
 /*  Plafonds réglementés                                          */
@@ -1056,6 +1183,7 @@ function renderAccounts() {
   el.querySelectorAll('[data-balance-key]').forEach(div => {
     animateNumberKeyed(div.dataset.balanceKey, div, Number(div.dataset.balanceTo), formatEUR);
   });
+  wireCryptoCoinSearch(el);
 }
 
 /* ---------------------------------------------------------- */
@@ -1867,7 +1995,7 @@ async function generateMonthlyReportPDF() {
   if (session) {
     boot();
   } else {
-    document.getElementById("loading").style.display = "none";
+    hideLoadingScreen();
     document.getElementById("auth-screen").style.display = "flex";
   }
 })();
