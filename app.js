@@ -433,6 +433,7 @@ async function bootInner() {
   state.recurringIncomes = incomes || [];
 
   hideLoadingScreen();
+  updateAdminEntryPoint();
 
   if (state.accounts.length === 0) {
     showOnboarding();
@@ -2807,6 +2808,90 @@ function triggerRankUpCelebration(tier) {
     confettiWrap.innerHTML = "";
   }, 6500);
 }
+
+/* ------------------------- Statistiques admin (anonymisées) ------------------------- */
+
+// Seul ce compte (Lucas) voit le bouton et peut appeler la fonction Postgres
+// admin_stats() — celle-ci vérifie elle-même auth.uid() côté serveur (voir
+// migration_0007_admin_stats.sql), donc ce test côté client n'est qu'un
+// confort d'affichage, pas une mesure de sécurité en soi.
+const ADMIN_USER_ID = "187b2101-a354-4063-985f-72c5c8cf0cd0";
+
+function isAdminUser() {
+  return state.session?.user?.id === ADMIN_USER_ID;
+}
+
+function updateAdminEntryPoint() {
+  const btn = document.getElementById("admin-stats-btn");
+  if (btn) btn.style.display = isAdminUser() ? "" : "none";
+}
+
+function openAdminStatsModal() {
+  const modal = document.getElementById("admin-stats-modal");
+  const body = document.getElementById("admin-stats-body");
+  if (!modal || !body) return;
+  modal.classList.add("open");
+  body.innerHTML = `<div class="admin-stats-loading">Chargement…</div>`;
+  loadAdminStats();
+}
+
+function closeAdminStatsModal() {
+  document.getElementById("admin-stats-modal")?.classList.remove("open");
+}
+
+async function loadAdminStats() {
+  const body = document.getElementById("admin-stats-body");
+  if (!body) return;
+  try {
+    const { data, error } = await sb.rpc("admin_stats");
+    if (error) throw error;
+    renderAdminStats(data);
+  } catch (e) {
+    body.innerHTML = `<div class="admin-stats-error">Impossible de charger les statistiques : ${e.message || e}</div>`;
+  }
+}
+
+function renderAdminStats(s) {
+  const body = document.getElementById("admin-stats-body");
+  if (!body || !s) return;
+  const eur = v => v == null ? "—" : `${Number(v).toLocaleString("fr-FR")} €`;
+  const num = v => v == null ? "—" : Number(v).toLocaleString("fr-FR");
+
+  body.innerHTML = `
+    <div class="admin-stats-grid">
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.total_inscrits)}</div><div class="admin-stat-label">Inscrits</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.utilisateurs_actifs)}</div><div class="admin-stat-label">Utilisateurs actifs (≥1 compte)</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${eur(s.patrimoine_moyen)}</div><div class="admin-stat-label">Patrimoine moyen</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${eur(s.patrimoine_median)}</div><div class="admin-stat-label">Patrimoine médian</div></div>
+    </div>
+
+    <div class="admin-stats-section-title">Répartition des comptes</div>
+    <div class="admin-stats-grid">
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.nb_comptes_epargne)}</div><div class="admin-stat-label">Comptes épargne</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.nb_comptes_investissement)}</div><div class="admin-stat-label">Comptes investissement</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.nb_comptes_crypto)}</div><div class="admin-stat-label">Comptes crypto</div></div>
+    </div>
+
+    <div class="admin-stats-section-title">PEA</div>
+    <div class="admin-stats-grid">
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.nb_utilisateurs_pea)}</div><div class="admin-stat-label">Utilisateurs avec PEA</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${eur(s.valeur_moyenne_pea)}</div><div class="admin-stat-label">Valeur moyenne du PEA</div></div>
+    </div>
+
+    <div class="admin-stats-section-title">Autres placements</div>
+    <div class="admin-stats-grid">
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.nb_utilisateurs_livret_a)}</div><div class="admin-stat-label">Utilisateurs avec Livret A</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.nb_utilisateurs_crypto)}</div><div class="admin-stat-label">Utilisateurs avec crypto</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${num(s.nb_utilisateurs_investissement)}</div><div class="admin-stat-label">Utilisateurs avec investissement</div></div>
+    </div>
+  `;
+}
+
+document.getElementById("admin-stats-btn")?.addEventListener("click", openAdminStatsModal);
+document.getElementById("admin-stats-close")?.addEventListener("click", closeAdminStatsModal);
+document.getElementById("admin-stats-modal")?.addEventListener("click", e => {
+  if (e.target.id === "admin-stats-modal") closeAdminStatsModal();
+});
 
 /* ---------------------------------------------------------- */
 /*  Init                                                          */

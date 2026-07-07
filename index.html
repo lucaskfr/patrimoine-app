@@ -23,7 +23,7 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
@@ -225,6 +225,7 @@
       <div class="rank-badge" id="rank-badge"></div>
     </div>
     <div class="topbar-actions">
+      <button class="icon-btn" id="admin-stats-btn" title="Statistiques admin" style="display:none;">📊</button>
       <button class="icon-btn" id="settings-btn" title="Personnaliser l'interface">⚙️</button>
       <button class="logout-btn" id="logout-btn">Déconnexion</button>
     </div>
@@ -611,12 +612,25 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="admin-stats-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>📊 Statistiques globales</h3>
+      <button class="modal-close" id="admin-stats-close">&times;</button>
+    </div>
+    <p class="admin-stats-note">Données anonymisées et agrégées — aucune information individuelle n'est affichée.</p>
+    <div id="admin-stats-body">
+      <div class="admin-stats-loading">Chargement…</div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
