@@ -43,8 +43,10 @@ html[data-theme="sombre"] {
   --paper-line: #2a3744;
   --ink: #eae4d6;
   --ink-soft: #b7c0c9;
-  --navy: #ecebe3;
-  --navy-deep: #f4ecd8;
+  /* --navy / --navy-deep restent la marine littérale : elles servent de
+     fond (barre du haut, boutons pleins, carte hero) et doivent rester
+     sombres dans tous les thèmes. Les titres et libellés utilisent --ink,
+     qui elle s'adapte déjà correctement à chaque thème. */
   --card-shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
   --card-bg: #1b2530;
 }
@@ -99,7 +101,7 @@ body {
 
 h1, h2, h3, h4 {
   font-family: var(--font-serif);
-  color: var(--navy);
+  color: var(--ink);
   margin: 0 0 0.4em 0;
   font-weight: 600;
 }
@@ -271,7 +273,7 @@ main {
 .card-title {
   font-family: var(--font-serif);
   font-size: 1.05rem;
-  color: var(--navy);
+  color: var(--ink);
   margin-bottom: 12px;
   padding-bottom: 8px;
   border-bottom: 1px dashed var(--paper-line);
@@ -350,7 +352,7 @@ main {
   50% { transform: scale(0.98) rotate(1deg); }
   75% { transform: scale(1.04) rotate(-1deg); }
 }
-.streak-value { font-size: 1.7rem; font-weight: 700; color: var(--navy); transition: color .2s ease; }
+.streak-value { font-size: 1.7rem; font-weight: 700; color: var(--ink); transition: color .2s ease; }
 .streak-label { font-size: 0.8rem; color: var(--ink-soft); margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .streak-icon { animation: none; }
@@ -421,7 +423,7 @@ main {
 }
 .movement-row:last-child { border-bottom: none; }
 .movement-row .m-left { display: flex; flex-direction: column; gap: 2px; }
-.movement-row .m-account { font-weight: 600; color: var(--navy); }
+.movement-row .m-account { font-weight: 600; color: var(--ink); }
 .movement-row .m-meta { font-size: 0.78rem; color: var(--ink-soft); }
 .movement-row .m-amount { font-weight: 600; }
 .movement-row .m-amount.positive { color: var(--sage); }
@@ -446,7 +448,7 @@ main {
 .account-card-head {
   display: flex; justify-content: space-between; align-items: flex-start;
 }
-.account-card-head .name { font-family: var(--font-serif); font-size: 1.1rem; color: var(--navy); }
+.account-card-head .name { font-family: var(--font-serif); font-size: 1.1rem; color: var(--ink); }
 .account-card-head .type-tag {
   font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--ink-soft); background: var(--parchment-dark);
@@ -454,7 +456,7 @@ main {
 }
 .account-card .balance {
   font-size: 1.5rem; font-weight: 700; margin-top: 6px;
-  color: var(--navy);
+  color: var(--ink);
 }
 .account-card-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
 
@@ -548,10 +550,10 @@ main {
 .btn-primary:hover { background: var(--navy-deep); }
 .btn-gold { background: var(--gold); color: #fff; }
 .btn-gold:hover { background: #98781f; }
-.btn-outline { background: transparent; border-color: var(--navy); color: var(--navy); }
+.btn-outline { background: transparent; border-color: var(--ink); color: var(--ink); }
 .btn-outline:hover { background: rgba(10,37,64,0.06); }
 .btn-text { background: none; border: none; color: var(--ink-soft); font-weight: 500; padding: 6px 8px; transition: color .15s ease, transform .15s ease; }
-.btn-text:hover { color: var(--navy); transform: translateX(1px); }
+.btn-text:hover { color: var(--ink); transform: translateX(1px); }
 .btn-danger { background: transparent; color: var(--rust); border-color: var(--rust); }
 .btn-danger:hover { background: var(--rust-light); }
 .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
@@ -579,7 +581,7 @@ main {
   color: var(--ink);
 }
 .field input:focus, .field select:focus, .field textarea:focus {
-  outline: none; border-color: var(--navy);
+  outline: none; border-color: var(--ink);
 }
 .field.amount-field input { font-family: var(--font-mono); }
 .field-row { display: flex; gap: 10px; }
@@ -655,7 +657,7 @@ main {
   flex: 1; background: none; border: none; padding: 10px; font-weight: 600;
   color: var(--ink-soft); border-bottom: 2px solid transparent;
 }
-.auth-tabs button.active { color: var(--navy); border-color: var(--gold); }
+.auth-tabs button.active { color: var(--ink); border-color: var(--gold); }
 
 .onboarding-card .obstep { display: none; }
 .onboarding-card .obstep.active { display: block; }
@@ -742,12 +744,12 @@ main {
 }
 .journal-row .j-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .journal-row .j-mid { flex: 1; min-width: 0; }
-.journal-row .j-account { font-weight: 600; font-size: 0.88rem; color: var(--navy); }
+.journal-row .j-account { font-weight: 600; font-size: 0.88rem; color: var(--ink); }
 .journal-row .j-note { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .journal-row .j-amount { font-weight: 600; flex-shrink: 0; }
 .journal-row .j-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .journal-row .j-actions button { background: none; border: none; font-size: 0.95rem; padding: 4px; color: var(--ink-soft); }
-.journal-row .j-actions button:hover { color: var(--navy); }
+.journal-row .j-actions button:hover { color: var(--ink); }
 
 .empty-state {
   text-align: center; padding: 40px 20px; color: var(--ink-soft);
@@ -916,12 +918,12 @@ main {
 .recurring-item:last-child { border-bottom: none; }
 .recurring-item.paused { opacity: 0.55; }
 .recurring-item .rc-mid { flex: 1; min-width: 0; }
-.recurring-item .rc-label { font-weight: 600; font-size: 0.92rem; color: var(--navy); }
+.recurring-item .rc-label { font-weight: 600; font-size: 0.92rem; color: var(--ink); }
 .recurring-item .rc-meta { font-size: 0.78rem; color: var(--ink-soft); }
 .recurring-item .rc-amount { font-weight: 600; flex-shrink: 0; color: var(--rust); }
 .recurring-item .rc-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .recurring-item .rc-actions button { background: none; border: none; font-size: 0.95rem; padding: 4px; color: var(--ink-soft); }
-.recurring-item .rc-actions button:hover { color: var(--navy); }
+.recurring-item .rc-actions button:hover { color: var(--ink); }
 .rc-badge-paused {
   font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
   color: var(--ink-soft); border: 1px solid var(--paper-line); border-radius: 10px; padding: 1px 7px; margin-left: 6px;
