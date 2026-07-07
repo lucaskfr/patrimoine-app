@@ -655,6 +655,7 @@ function switchView(view) {
 }
 
 function renderAll() {
+  updateGameProgress();
   if (state.currentView === "dashboard") renderDashboard();
   if (state.currentView === "accounts") renderAccounts();
   if (state.currentView === "expenses") renderExpenses();
@@ -691,12 +692,6 @@ function renderDashboard() {
   renderEvolutionChart();
   renderRecentMovements();
   renderStreakAndBadges();
-  renderQuests();
-  const { newlyUnlocked } = syncCardCollection();
-  if (newlyUnlocked.length) {
-    const names = newlyUnlocked.map(id => allCardDefs().find(c => c.id === id)?.name).filter(Boolean);
-    showToast(`🎴 Nouvelle carte débloquée : ${names.join(", ")} !`);
-  }
 }
 
 /* ---------------------------------------------------------- */
@@ -2706,6 +2701,111 @@ function triggerPixelEasterEgg() {
     document.body.classList.remove("pixel-mode");
     document.getElementById("pixel-overlay").classList.remove("active");
   }, 5000);
+}
+
+/* ------------------------- Rang / surnom évolutif ------------------------- */
+
+// Le rang reprend le nombre de cartes déjà débloquées (voir plus haut) comme
+// score composite tout fait : il reflète déjà streaks, diversification,
+// patrimoine, quêtes, etc. sans dupliquer cette logique.
+const RANK_TIERS = [
+  { min: 0, icon: "🌱", name: "Novice du patrimoine" },
+  { min: 2, icon: "📘", name: "Apprenti épargnant" },
+  { min: 4, icon: "💰", name: "Épargnant confirmé" },
+  { min: 7, icon: "🧭", name: "Stratège financier" },
+  { min: 10, icon: "🏛️", name: "Bâtisseur de patrimoine" },
+  { min: 13, icon: "🦉", name: "Sage du long terme" },
+  { min: 16, icon: "👑", name: "Maître stratège" },
+  { min: 17, icon: "🏵️", name: "Légende du Patrimoine" },
+];
+
+function rankKey() { return `patrimoine_rank_${currentUserId()}`; }
+
+function computeRankIndex(unlockedCount) {
+  let idx = 0;
+  for (let i = 0; i < RANK_TIERS.length; i++) {
+    if (unlockedCount >= RANK_TIERS[i].min) idx = i;
+  }
+  return idx;
+}
+
+function updateGameProgress() {
+  const { stored, newlyUnlocked } = syncCardCollection();
+  if (newlyUnlocked.length) {
+    const names = newlyUnlocked.map(id => allCardDefs().find(c => c.id === id)?.name).filter(Boolean);
+    showToast(`🎴 Nouvelle carte débloquée : ${names.join(", ")} !`);
+  }
+  renderQuests();
+  updateRank(stored.length);
+}
+
+function updateRank(unlockedCount) {
+  const idx = computeRankIndex(unlockedCount);
+  const tier = RANK_TIERS[idx];
+  const badge = document.getElementById("rank-badge");
+  if (badge) badge.textContent = `${tier.icon} ${tier.name}`;
+
+  // -1 = jamais calculé pour ce compte : on mémorise silencieusement sans
+  // célébrer, pour ne pas fêter un rang déjà acquis avant l'existence de
+  // cette fonctionnalité.
+  const storedIdx = gameStorageGet(rankKey(), -1);
+  if (storedIdx === -1) {
+    gameStorageSet(rankKey(), idx);
+    return;
+  }
+  if (idx > storedIdx) {
+    gameStorageSet(rankKey(), idx);
+    triggerRankUpCelebration(tier);
+  }
+}
+
+function playRankFanfare() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const notes = [392.00, 523.25, 659.25, 784.00, 987.77];
+    let t = ctx.currentTime;
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.16, t + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.36);
+      t += i === notes.length - 1 ? 0 : 0.16;
+    });
+    setTimeout(() => ctx.close(), 2000);
+  } catch (e) { /* AudioContext indisponible : on continue sans son */ }
+}
+
+function triggerRankUpCelebration(tier) {
+  const overlay = document.getElementById("rank-up-overlay");
+  const confettiWrap = document.getElementById("rank-confetti");
+  if (!overlay || !confettiWrap) return;
+
+  document.getElementById("rank-up-icon").textContent = tier.icon;
+  document.getElementById("rank-up-name").textContent = tier.name;
+
+  const colors = ["#d9b95e", "#5c7a5c", "#a4502b", "#6b4ca0", "#3d6b6b", "#f4ecd8"];
+  confettiWrap.innerHTML = Array.from({ length: 44 }).map(() => {
+    const left = Math.random() * 100;
+    const delay = Math.random() * 0.7;
+    const duration = 2.4 + Math.random() * 1.8;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const rotate = Math.round(Math.random() * 360);
+    return `<span class="confetti-piece" style="left:${left}%; background:${color}; animation-delay:${delay}s; animation-duration:${duration}s; --rot:${rotate}deg;"></span>`;
+  }).join("");
+
+  overlay.classList.add("active");
+  playRankFanfare();
+  setTimeout(() => {
+    overlay.classList.remove("active");
+    confettiWrap.innerHTML = "";
+  }, 6500);
 }
 
 /* ---------------------------------------------------------- */

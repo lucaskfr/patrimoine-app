@@ -23,7 +23,7 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -220,7 +220,10 @@
 <!-- ===================== APP ===================== -->
 <div id="app">
   <div class="topbar">
-    <div class="brand" id="brand-logo"><span class="mark">📒</span> Patrimoine</div>
+    <div class="brand-group">
+      <div class="brand" id="brand-logo"><span class="mark">📒</span> Patrimoine</div>
+      <div class="rank-badge" id="rank-badge"></div>
+    </div>
     <div class="topbar-actions">
       <button class="icon-btn" id="settings-btn" title="Personnaliser l'interface">⚙️</button>
       <button class="logout-btn" id="logout-btn">Déconnexion</button>
@@ -599,12 +602,21 @@
   <div class="pixel-badge">★ MODE RÉTRO ★</div>
 </div>
 
+<div class="rank-up-overlay" id="rank-up-overlay">
+  <div class="rank-confetti" id="rank-confetti"></div>
+  <div class="rank-up-card">
+    <div class="rank-up-eyebrow">Nouveau rang débloqué !</div>
+    <div class="rank-up-icon" id="rank-up-icon"></div>
+    <div class="rank-up-name" id="rank-up-name"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
