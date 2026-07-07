@@ -838,7 +838,7 @@ main {
   opacity: .85;
 }
 .boot-ring-sweep-3 {
-  stroke: var(--parchment); stroke-width: 1.5; stroke-dasharray: 14 300;
+  stroke: #f4ecd8; stroke-width: 1.5; stroke-dasharray: 14 300;
   animation: bootSpin 5.5s linear infinite;
   opacity: .6;
 }
@@ -856,7 +856,7 @@ main {
 
 .boot-title {
   font-family: var(--font-serif); font-weight: 700; font-size: 2.1rem;
-  letter-spacing: 0.1em; color: var(--parchment);
+  letter-spacing: 0.1em; color: #f4ecd8;
 }
 .boot-title span {
   display: inline-block;
