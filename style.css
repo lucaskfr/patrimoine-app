@@ -448,6 +448,10 @@ main {
 .account-card-head {
   display: flex; justify-content: space-between; align-items: flex-start;
 }
+.account-card-head [data-action="delete-account"] {
+  font-size: 0.95rem; padding: 4px 6px; opacity: 0.55;
+}
+.account-card-head [data-action="delete-account"]:hover { opacity: 1; color: var(--rust); }
 .account-card-head .name { font-family: var(--font-serif); font-size: 1.1rem; color: var(--ink); }
 .account-card-head .type-tag {
   font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;

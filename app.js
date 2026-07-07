@@ -1147,6 +1147,7 @@ function renderAccounts() {
             <div class="name">${a.name}</div>
             <span class="type-tag">${TYPE_LABELS[a.type]}</span>
           </div>
+          ${a.type !== "courant" ? `<button class="btn-text btn-sm" data-action="delete-account" data-account="${a.id}" title="Supprimer ce compte">🗑</button>` : ""}
         </div>
         <div class="balance amount" data-balance-key="${balanceKey}" data-balance-to="${balance}">${formatEUR(fromBalance)}</div>
         ${capGaugeHTML(a, balance)}
@@ -1180,10 +1181,40 @@ function renderAccounts() {
   el.querySelectorAll('[data-action="crypto-refresh"]').forEach(btn => {
     btn.addEventListener("click", () => refreshCryptoPrice(btn.dataset.account));
   });
+  el.querySelectorAll('[data-action="delete-account"]').forEach(btn => {
+    btn.addEventListener("click", () => deleteAccount(btn.dataset.account));
+  });
   el.querySelectorAll('[data-balance-key]').forEach(div => {
     animateNumberKeyed(div.dataset.balanceKey, div, Number(div.dataset.balanceTo), formatEUR);
   });
   wireCryptoCoinSearch(el);
+}
+
+async function deleteAccount(accountId) {
+  const acc = accountById(accountId);
+  if (!acc) return;
+  if (acc.type === "courant") {
+    showToast("Le compte courant ne peut pas être supprimé.", true);
+    return;
+  }
+  const confirmed = await confirmDialog(
+    `Supprimer le compte "${acc.name}" ? Tous ses mouvements seront définitivement supprimés. Cette action est irréversible.`
+  );
+  if (!confirmed) return;
+
+  try {
+    const { error: movErr } = await sb.from("movements").delete().eq("account_id", accountId);
+    if (movErr) throw movErr;
+    const { error: accErr } = await sb.from("accounts").delete().eq("id", accountId);
+    if (accErr) throw accErr;
+
+    state.accounts = state.accounts.filter(a => a.id !== accountId);
+    state.movements = state.movements.filter(m => m.account_id !== accountId);
+    showToast("Compte supprimé.");
+    renderAll();
+  } catch (err) {
+    showToast("Erreur lors de la suppression : " + err.message, true);
+  }
 }
 
 /* ---------------------------------------------------------- */
