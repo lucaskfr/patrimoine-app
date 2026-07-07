@@ -902,6 +902,7 @@ main {
 .recurring-item .rc-label { font-weight: 600; font-size: 0.92rem; color: var(--ink); }
 .recurring-item .rc-meta { font-size: 0.78rem; color: var(--ink-soft); }
 .recurring-item .rc-amount { font-weight: 600; flex-shrink: 0; color: var(--rust); }
+.recurring-item .rc-amount.positive { color: var(--sage); }
 .recurring-item .rc-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .recurring-item .rc-actions button { background: none; border: none; font-size: 0.95rem; padding: 4px; color: var(--ink-soft); }
 .recurring-item .rc-actions button:hover { color: var(--ink); }

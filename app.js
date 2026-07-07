@@ -70,6 +70,7 @@ let state = {
   accounts: [],
   movements: [],
   recurringExpenses: [],
+  recurringIncomes: [],
   currentView: "dashboard",
   expenseCursor: startOfMonth(new Date()),
   heatmapYear: new Date().getFullYear(),
@@ -410,10 +411,11 @@ async function bootInner() {
   document.getElementById("auth-screen").style.display = "none";
   document.getElementById("loading").style.display = "flex";
 
-  const [{ data: accounts, error: accErr }, { data: movements, error: movErr }, { data: recurring, error: recErr }] = await Promise.all([
+  const [{ data: accounts, error: accErr }, { data: movements, error: movErr }, { data: recurring, error: recErr }, { data: incomes, error: incErr }] = await Promise.all([
     sb.from("accounts").select("*").order("sort_order"),
     sb.from("movements").select("*").order("date", { ascending: false }),
     sb.from("recurring_expenses").select("*").order("created_at"),
+    sb.from("recurring_incomes").select("*").order("created_at"),
   ]);
 
   if (accErr || movErr) {
@@ -423,10 +425,12 @@ async function bootInner() {
     return;
   }
   if (recErr) console.warn("Abonnements récurrents indisponibles :", recErr.message);
+  if (incErr) console.warn("Revenus récurrents indisponibles :", incErr.message);
 
   state.accounts = accounts || [];
   state.movements = movements || [];
   state.recurringExpenses = recurring || [];
+  state.recurringIncomes = incomes || [];
 
   hideLoadingScreen();
 
@@ -737,18 +741,21 @@ const BADGE_DEFS = [
 ];
 
 function computeStreakContext() {
+  // Un mois "réussi" est un mois où le patrimoine (hors compte courant) n'a
+  // pas baissé — rester stable compte aussi, pas seulement progresser :
+  // exiger une hausse stricte tous les mois n'est pas réaliste.
   const series = computeMonthlySeries();
   let streak = 0;
   for (let i = series.length - 1; i >= 1; i--) {
-    if (series[i].total > series[i - 1].total) streak++;
+    if (series[i].total >= series[i - 1].total) streak++;
     else break;
   }
   let maxStreak = 0, running = 0;
   for (let i = 1; i < series.length; i++) {
-    if (series[i].total > series[i - 1].total) { running++; maxStreak = Math.max(maxStreak, running); }
+    if (series[i].total >= series[i - 1].total) { running++; maxStreak = Math.max(maxStreak, running); }
     else running = 0;
   }
-  const everPositiveMonth = series.some((s, i) => i > 0 && s.total > series[i - 1].total);
+  const everPositiveMonth = series.some((s, i) => i > 0 && s.total >= series[i - 1].total);
 
   const allDates = state.movements.map(m => m.date).sort();
   let doubled = false;
@@ -1274,6 +1281,7 @@ function renderExpenses() {
   }
 
   renderTrendChart(acc);
+  renderIncomes();
   renderRecurring();
   renderHeatmap(acc);
 
@@ -1352,14 +1360,17 @@ function toLocalISODate(d) {
 // et qui n'a pas encore de mouvement ce mois-ci. Évite ainsi de ressaisir
 // à la main les dépenses récurrentes identiques (loyer, abonnements...).
 async function generateDueRecurringExpenses() {
-  if (!state.recurringExpenses.length) return;
+  if (!state.recurringExpenses.length && !state.recurringIncomes.length) return;
   const today = new Date();
   const todayDay = today.getDate();
+  const todayStr = toLocalISODate(today);
   const currentMonthStart = toLocalISODate(startOfMonth(today));
 
   const toInsert = [];
+
   for (const re of state.recurringExpenses) {
     if (!re.active) continue;
+    if (re.end_date && todayStr > re.end_date) continue;
     if (!accountById(re.account_id)) continue;
     const day = Math.min(re.day_of_month, daysInMonth(today.getFullYear(), today.getMonth()));
     if (todayDay < day) continue;
@@ -1376,12 +1387,32 @@ async function generateDueRecurringExpenses() {
       recurring_id: re.id,
     });
   }
+
+  for (const ri of state.recurringIncomes) {
+    if (!ri.active) continue;
+    if (!accountById(ri.account_id)) continue;
+    const day = Math.min(ri.day_of_month, daysInMonth(today.getFullYear(), today.getMonth()));
+    if (todayDay < day) continue;
+    const alreadyGenerated = state.movements.some(m => m.recurring_income_id === ri.id && m.date >= currentMonthStart);
+    if (alreadyGenerated) continue;
+    const dateStr = toLocalISODate(new Date(today.getFullYear(), today.getMonth(), day));
+    toInsert.push({
+      user_id: state.session.user.id,
+      account_id: ri.account_id,
+      date: dateStr,
+      amount: Math.abs(Number(ri.amount)),
+      category: null,
+      note: ri.label,
+      recurring_income_id: ri.id,
+    });
+  }
+
   if (toInsert.length === 0) return;
 
   const { data, error } = await sb.from("movements").insert(toInsert).select();
-  if (error) { console.error("Erreur génération abonnements :", error); return; }
+  if (error) { console.error("Erreur génération récurrences :", error); return; }
   state.movements.push(...(data || []));
-  showToast(`${data.length} abonnement${data.length > 1 ? "s" : ""} ajouté${data.length > 1 ? "s" : ""} automatiquement ce mois-ci.`);
+  showToast(`${data.length} mouvement${data.length > 1 ? "s" : ""} récurrent${data.length > 1 ? "s" : ""} ajouté${data.length > 1 ? "s" : ""} automatiquement ce mois-ci.`);
 }
 
 function renderRecurring() {
@@ -1392,22 +1423,165 @@ function renderRecurring() {
     el.innerHTML = `<div class="empty-state"><div class="icon">🔁</div>Aucun abonnement enregistré. Ajoutez vos dépenses fixes (loyer, streaming, salle de sport…) pour ne plus avoir à les ressaisir chaque mois.</div>`;
     return;
   }
-  el.innerHTML = list.map(re => `
-    <div class="recurring-item ${re.active ? "" : "paused"}">
+  const todayStr = todayISO();
+  el.innerHTML = list.map(re => {
+    const ended = re.end_date && todayStr > re.end_date;
+    return `
+    <div class="recurring-item ${re.active && !ended ? "" : "paused"}">
       <div class="rc-mid">
-        <div class="rc-label">${escapeHTML(re.label)}${re.active ? "" : `<span class="rc-badge-paused">En pause</span>`}</div>
-        <div class="rc-meta">Le ${re.day_of_month} de chaque mois${re.category ? " · " + re.category : ""}</div>
+        <div class="rc-label">${escapeHTML(re.label)}${ended ? `<span class="rc-badge-paused">Terminé</span>` : (re.active ? "" : `<span class="rc-badge-paused">En pause</span>`)}</div>
+        <div class="rc-meta">Le ${re.day_of_month} de chaque mois${re.category ? " · " + re.category : ""}${re.end_date ? " · jusqu'au " + formatDateShort(re.end_date) : ""}</div>
       </div>
       <span class="rc-amount amount">- ${formatEUR(re.amount)}</span>
       <div class="rc-actions">
         <button data-rc-edit="${re.id}" title="Modifier">✎</button>
       </div>
     </div>
-  `).join("");
+  `;
+  }).join("");
   el.querySelectorAll("[data-rc-edit]").forEach(btn => {
     btn.addEventListener("click", () => openRecurringModal(btn.dataset.rcEdit));
   });
 }
+
+/* ---------------------------------------------------------- */
+/*  Revenus récurrents mensuels                                  */
+/* ---------------------------------------------------------- */
+
+function renderIncomes() {
+  const el = document.getElementById("income-list");
+  if (!el) return;
+  const list = [...state.recurringIncomes].sort((a, b) => a.day_of_month - b.day_of_month);
+  if (list.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="icon">💵</div>Aucun revenu récurrent enregistré. Ajoutez votre salaire ou autre revenu régulier pour qu'il soit ajouté automatiquement chaque mois.</div>`;
+    return;
+  }
+  el.innerHTML = list.map(ri => `
+    <div class="recurring-item ${ri.active ? "" : "paused"}">
+      <div class="rc-mid">
+        <div class="rc-label">${escapeHTML(ri.label)}${ri.active ? "" : `<span class="rc-badge-paused">En pause</span>`}</div>
+        <div class="rc-meta">Le ${ri.day_of_month} de chaque mois</div>
+      </div>
+      <span class="rc-amount amount positive">+ ${formatEUR(ri.amount)}</span>
+      <div class="rc-actions">
+        <button data-ic-edit="${ri.id}" title="Modifier">✎</button>
+      </div>
+    </div>
+  `).join("");
+  el.querySelectorAll("[data-ic-edit]").forEach(btn => {
+    btn.addEventListener("click", () => openIncomeModal(btn.dataset.icEdit));
+  });
+}
+
+const icModal = document.getElementById("income-modal");
+const icForm = document.getElementById("income-form");
+
+document.getElementById("add-income-btn").addEventListener("click", () => openIncomeModal());
+document.getElementById("ic-modal-close").addEventListener("click", closeIncomeModal);
+icModal.addEventListener("click", (e) => { if (e.target === icModal) closeIncomeModal(); });
+
+function openIncomeModal(incomeId) {
+  icForm.reset();
+  document.getElementById("ic-error").style.display = "none";
+  document.getElementById("ic-id").value = "";
+  document.getElementById("ic-delete").style.display = "none";
+  document.getElementById("ic-active").checked = true;
+
+  if (incomeId) {
+    const ri = state.recurringIncomes.find(r => r.id === incomeId);
+    if (!ri) return;
+    document.getElementById("ic-modal-title").textContent = "Modifier le revenu";
+    document.getElementById("ic-id").value = ri.id;
+    document.getElementById("ic-label").value = ri.label;
+    document.getElementById("ic-amount").value = ri.amount;
+    document.getElementById("ic-day").value = ri.day_of_month;
+    document.getElementById("ic-active").checked = ri.active;
+    document.getElementById("ic-delete").style.display = "inline-block";
+  } else {
+    document.getElementById("ic-modal-title").textContent = "Ajouter un revenu";
+  }
+
+  icModal.classList.add("open");
+}
+
+function closeIncomeModal() {
+  icModal.classList.remove("open");
+}
+
+document.getElementById("ic-delete").addEventListener("click", async () => {
+  const id = document.getElementById("ic-id").value;
+  if (!id) return;
+  const confirmed = await confirmDialog("Supprimer ce revenu récurrent ? Les mouvements déjà générés resteront dans le journal.");
+  if (!confirmed) return;
+  const { error } = await sb.from("recurring_incomes").delete().eq("id", id);
+  if (error) { showToast("Erreur lors de la suppression.", true); return; }
+  state.recurringIncomes = state.recurringIncomes.filter(r => r.id !== id);
+  showToast("Revenu supprimé.");
+  closeIncomeModal();
+  renderAll();
+});
+
+icForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById("ic-error");
+  errEl.style.display = "none";
+
+  const acc = courantAccount();
+  if (!acc) {
+    errEl.textContent = "Aucun compte courant trouvé.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const label = document.getElementById("ic-label").value.trim();
+  const amount = parseFloat(document.getElementById("ic-amount").value);
+  const day = parseInt(document.getElementById("ic-day").value, 10);
+  const active = document.getElementById("ic-active").checked;
+
+  if (!label || isNaN(amount) || amount <= 0) {
+    errEl.textContent = "Merci de renseigner un nom et un montant valides.";
+    errEl.style.display = "block";
+    return;
+  }
+  if (isNaN(day) || day < 1 || day > 28) {
+    errEl.textContent = "Le jour du mois doit être compris entre 1 et 28.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const submitBtn = document.getElementById("ic-submit");
+  submitBtn.disabled = true;
+
+  try {
+    const editId = document.getElementById("ic-id").value;
+    if (editId) {
+      const { data, error } = await sb.from("recurring_incomes")
+        .update({ label, amount, day_of_month: day, active })
+        .eq("id", editId).select().single();
+      if (error) throw error;
+      state.recurringIncomes = state.recurringIncomes.map(r => r.id === editId ? data : r);
+      showToast("Revenu modifié.");
+    } else {
+      const { data, error } = await sb.from("recurring_incomes")
+        .insert({
+          user_id: state.session.user.id,
+          account_id: acc.id,
+          label, amount, day_of_month: day, active,
+        }).select().single();
+      if (error) throw error;
+      state.recurringIncomes.push(data);
+      showToast("Revenu ajouté.");
+    }
+    closeIncomeModal();
+    await generateDueRecurringExpenses();
+    renderAll();
+  } catch (err) {
+    errEl.textContent = "Erreur : " + err.message;
+    errEl.style.display = "block";
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
 
 const rcModal = document.getElementById("recurring-modal");
 const rcForm = document.getElementById("recurring-form");
@@ -1422,6 +1596,7 @@ function openRecurringModal(recurringId) {
   document.getElementById("rc-id").value = "";
   document.getElementById("rc-delete").style.display = "none";
   document.getElementById("rc-active").checked = true;
+  document.getElementById("rc-end-date").value = "";
 
   if (recurringId) {
     const re = state.recurringExpenses.find(r => r.id === recurringId);
@@ -1433,6 +1608,7 @@ function openRecurringModal(recurringId) {
     document.getElementById("rc-amount").value = re.amount;
     document.getElementById("rc-day").value = re.day_of_month;
     if (re.category) document.getElementById("rc-category").value = re.category;
+    document.getElementById("rc-end-date").value = re.end_date || "";
     document.getElementById("rc-active").checked = re.active;
     document.getElementById("rc-delete").style.display = "inline-block";
   } else {
@@ -1476,6 +1652,7 @@ rcForm.addEventListener("submit", async (e) => {
   const amount = parseFloat(document.getElementById("rc-amount").value);
   const day = parseInt(document.getElementById("rc-day").value, 10);
   const category = document.getElementById("rc-category").value;
+  const endDate = document.getElementById("rc-end-date").value || null;
   const active = document.getElementById("rc-active").checked;
 
   if (!label || isNaN(amount) || amount <= 0) {
@@ -1496,7 +1673,7 @@ rcForm.addEventListener("submit", async (e) => {
     const editId = document.getElementById("rc-id").value;
     if (editId) {
       const { data, error } = await sb.from("recurring_expenses")
-        .update({ label, amount, day_of_month: day, category, active })
+        .update({ label, amount, day_of_month: day, category, end_date: endDate, active })
         .eq("id", editId).select().single();
       if (error) throw error;
       state.recurringExpenses = state.recurringExpenses.map(r => r.id === editId ? data : r);
@@ -1506,7 +1683,7 @@ rcForm.addEventListener("submit", async (e) => {
         .insert({
           user_id: state.session.user.id,
           account_id: acc.id,
-          label, amount, day_of_month: day, category, active,
+          label, amount, day_of_month: day, category, end_date: endDate, active,
         }).select().single();
       if (error) throw error;
       state.recurringExpenses.push(data);
@@ -2006,7 +2183,7 @@ async function generateMonthlyReportPDF() {
   y += 7;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text(`${summary.streakMonths} mois consécutifs d'épargne en hausse (hors compte courant).`, margin, y);
+  doc.text(`${summary.streakMonths} mois consécutifs sans baisse de patrimoine (hors compte courant).`, margin, y);
   y += 12;
 
   // Analyse du coach
@@ -2066,19 +2243,21 @@ function startOfISOWeek(d = new Date()) {
 
 const CARD_CATALOG = [
   { id: "premier-pas", icon: "🌱", name: "Premier pas", rarity: "commune", desc: "Enregistrer votre tout premier mouvement.", check: c => c.movementsCount >= 1 },
-  { id: "streak-3", icon: "🔥", name: "Épargnant assidu", rarity: "commune", desc: "3 mois d'affilée d'épargne en hausse.", check: c => c.streakCtx.maxStreak >= 3 },
+  { id: "streak-3", icon: "🔥", name: "Épargnant assidu", rarity: "commune", desc: "3 mois d'affilée sans baisse de patrimoine (hors compte courant).", check: c => c.streakCtx.maxStreak >= 3 },
   { id: "quatre-comptes", icon: "💼", name: "Grand organisateur", rarity: "commune", desc: "Gérer au moins 4 comptes.", check: c => c.accountsCount >= 4 },
   { id: "journal-25", icon: "📜", name: "Habitué du journal", rarity: "commune", desc: "Enregistrer 25 mouvements ou plus.", check: c => c.movementsCount >= 25 },
   { id: "trois-piliers", icon: "🏛️", name: "Trois piliers", rarity: "rare", desc: "Posséder un compte épargne, un compte investissement et un compte crypto.", check: c => c.hasEpargne && c.hasInvestissement && c.hasCrypto },
-  { id: "plafond", icon: "🏆", name: "Plafond dompté", rarity: "rare", desc: "Atteindre le plafond du Livret A.", check: c => c.streakCtx.livretACapped },
+  { id: "plafond", icon: "🧭", name: "Diversification maline", rarity: "rare", desc: "Approcher le plafond d'un livret réglementé (80%+) tout en ayant aussi un compte investissement ou crypto — mieux vaut diversifier que de laisser dormir des fonds au-delà du plafond, moins avantageux fiscalement.", check: c => c.nearCapDiversified },
   { id: "doubled", icon: "🚀", name: "Patrimoine doublé", rarity: "rare", desc: "Doubler votre patrimoine total depuis le premier mouvement.", check: c => c.streakCtx.doubled },
   { id: "veteran", icon: "🕰️", name: "Vétéran", rarity: "rare", desc: "Suivre votre patrimoine depuis plus de 6 mois.", check: c => c.oldestDays >= 180 },
   { id: "serenite", icon: "🧘", name: "Sérénité budgétaire", rarity: "rare", desc: "Configurer au moins un abonnement récurrent actif.", check: c => c.hasRecurring },
   { id: "crypto-actif", icon: "🪙", name: "Investisseur crypto", rarity: "rare", desc: "Détenir une quantité de crypto renseignée.", check: c => c.cryptoActive },
   { id: "quetes-10", icon: "🎯", name: "Chasseur de quêtes", rarity: "epique", desc: "Réussir 10 quêtes hebdomadaires.", check: c => c.questsCompletedTotal >= 10 },
-  { id: "streak-6", icon: "🔥🔥", name: "Six mois d'affilée", rarity: "epique", desc: "6 mois d'affilée d'épargne en hausse.", check: c => c.streakCtx.maxStreak >= 6 },
+  { id: "streak-6", icon: "🔥🔥", name: "Six mois d'affilée", rarity: "epique", desc: "6 mois d'affilée sans baisse de patrimoine (hors compte courant).", check: c => c.streakCtx.maxStreak >= 6 },
   { id: "cinq-mille", icon: "💎", name: "Cap des 5 000 €", rarity: "epique", desc: "Atteindre 5 000 € de patrimoine total.", check: c => c.totalPatrimoine >= 5000 },
-  { id: "vingt-cinq-mille", icon: "👑", name: "Riche et prospère", rarity: "legendaire", desc: "Atteindre 25 000 € de patrimoine total.", check: c => c.totalPatrimoine >= 25000 },
+  { id: "dix-mille", icon: "🌟", name: "Cap des 10 000 €", rarity: "epique", desc: "Atteindre 10 000 € de patrimoine total.", check: c => c.totalPatrimoine >= 10000 },
+  { id: "vingt-cinq-mille", icon: "👑", name: "Cap des 25 000 €", rarity: "legendaire", desc: "Atteindre 25 000 € de patrimoine total.", check: c => c.totalPatrimoine >= 25000 },
+  { id: "cinquante-mille", icon: "🏔️", name: "Cap des 50 000 €", rarity: "legendaire", desc: "Atteindre 50 000 € de patrimoine total.", check: c => c.totalPatrimoine >= 50000 },
 ];
 const ULTIMATE_CARD = { id: "ultime", icon: "🏵️", name: "Maître du Patrimoine", rarity: "ultime", desc: "Débloquer toutes les autres cartes de la collection." };
 
@@ -2094,6 +2273,9 @@ function buildGameContext() {
   const oldestDays = allDates.length
     ? Math.floor((Date.now() - new Date(allDates[0] + "T00:00:00").getTime()) / 86400000)
     : 0;
+  const capAccounts = state.accounts.filter(a => a.cap_type && CAP_VALUES[a.cap_type]);
+  const nearCapDiversified = capAccounts.some(a => accountBalance(a.id) >= 0.8 * CAP_VALUES[a.cap_type])
+    && (types.has("investissement") || types.has("crypto"));
   return {
     streakCtx,
     totalPatrimoine: totalPatrimoine(),
@@ -2105,6 +2287,7 @@ function buildGameContext() {
     hasRecurring: state.recurringExpenses.some(r => r.active),
     movementsCount: state.movements.length,
     oldestDays,
+    nearCapDiversified,
     questsCompletedTotal: gameStorageGet(questsTotalKey(), 0),
   };
 }
@@ -2412,7 +2595,7 @@ function renderWrapped() {
     bg: "ws-bg-5", eyebrow: "Record",
     headline: "Votre plus longue série d'épargne",
     figure: `${stats.maxStreak} mois`,
-    sub: "Le record de mois consécutifs d'épargne en hausse, tous temps confondus.",
+    sub: "Le record de mois consécutifs sans baisse de patrimoine, tous temps confondus.",
   });
 
   wrappedState.slides = slides;

@@ -23,7 +23,7 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -247,7 +247,7 @@
         <div class="streak-icon">🔥</div>
         <div class="streak-text">
           <div class="streak-value amount" id="streak-value">0</div>
-          <div class="streak-label">mois consécutifs d'épargne en hausse (hors compte courant)</div>
+          <div class="streak-label">mois consécutifs sans baisse de patrimoine (hors compte courant)</div>
         </div>
       </div>
 
@@ -341,10 +341,19 @@
 
       <div class="card">
         <div class="card-title-row">
+          <div class="card-title">Revenus mensuels</div>
+          <button type="button" class="btn btn-outline btn-sm" id="add-income-btn">+ Ajouter</button>
+        </div>
+        <p class="hint" style="margin:-4px 0 10px;">Ces revenus sont ajoutés automatiquement chaque mois au compte courant, à la date de réception indiquée.</p>
+        <div id="income-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title-row">
           <div class="card-title">Abonnements mensuels</div>
           <button type="button" class="btn btn-outline btn-sm" id="add-recurring-btn">+ Ajouter</button>
         </div>
-        <p class="hint" style="margin:-4px 0 10px;">Ces dépenses sont ajoutées automatiquement chaque mois au compte courant, à la date indiquée.</p>
+        <p class="hint" style="margin:-4px 0 10px;">Ces dépenses sont ajoutées automatiquement chaque mois au compte courant, à la date indiquée, jusqu'à leur éventuelle date de fin.</p>
         <div id="recurring-list"></div>
       </div>
 
@@ -480,12 +489,52 @@
         </select>
       </div>
       <div class="field">
+        <label for="rc-end-date">Date de fin (optionnel)</label>
+        <input id="rc-end-date" type="date">
+        <p class="hint" style="margin-top:4px;">Passé cette date, l'abonnement ne sera plus généré automatiquement.</p>
+      </div>
+      <div class="field">
         <label class="checkbox-label"><input type="checkbox" id="rc-active" checked> Actif (mettez en pause sans supprimer)</label>
       </div>
       <div id="rc-error" class="error-msg" style="display:none;"></div>
       <div style="display:flex; gap:10px; margin-top:6px;">
         <button type="button" class="btn btn-danger" id="rc-delete" style="display:none;">Supprimer</button>
         <button type="submit" class="btn btn-primary btn-block" id="rc-submit">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== MODAL : revenu récurrent ===================== -->
+<div class="modal-overlay" id="income-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="ic-modal-title">Ajouter un revenu</h3>
+      <button class="modal-close" id="ic-modal-close">&times;</button>
+    </div>
+    <form id="income-form">
+      <input type="hidden" id="ic-id">
+      <div class="field">
+        <label for="ic-label">Nom (ex : Salaire, Freelance…)</label>
+        <input id="ic-label" type="text" maxlength="80" required>
+      </div>
+      <div class="field-row">
+        <div class="field amount-field">
+          <label for="ic-amount">Montant mensuel (€)</label>
+          <input id="ic-amount" type="number" step="0.01" min="0.01" required>
+        </div>
+        <div class="field">
+          <label for="ic-day">Jour de réception</label>
+          <input id="ic-day" type="number" min="1" max="28" required>
+        </div>
+      </div>
+      <div class="field">
+        <label class="checkbox-label"><input type="checkbox" id="ic-active" checked> Actif (mettez en pause sans supprimer)</label>
+      </div>
+      <div id="ic-error" class="error-msg" style="display:none;"></div>
+      <div style="display:flex; gap:10px; margin-top:6px;">
+        <button type="button" class="btn btn-danger" id="ic-delete" style="display:none;">Supprimer</button>
+        <button type="submit" class="btn btn-primary btn-block" id="ic-submit">Enregistrer</button>
       </div>
     </form>
   </div>
@@ -556,6 +605,6 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
