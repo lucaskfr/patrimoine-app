@@ -23,11 +23,25 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
-<div id="loading" class="loading-screen">Patrimoine — chargement…</div>
+<div id="loading" class="loading-screen">
+  <div class="boot-grid"></div>
+  <div class="boot-core">
+    <svg class="boot-ring" viewBox="0 0 120 120" aria-hidden="true">
+      <circle class="boot-ring-track" cx="60" cy="60" r="52"></circle>
+      <circle class="boot-ring-sweep" cx="60" cy="60" r="52"></circle>
+      <circle class="boot-ring-sweep boot-ring-sweep-2" cx="60" cy="60" r="40"></circle>
+      <text class="boot-mark" x="60" y="70" text-anchor="middle">📒</text>
+    </svg>
+    <div class="boot-title" aria-label="Patrimoine">
+      <span style="--i:0">P</span><span style="--i:1">a</span><span style="--i:2">t</span><span style="--i:3">r</span><span style="--i:4">i</span><span style="--i:5">m</span><span style="--i:6">o</span><span style="--i:7">i</span><span style="--i:8">n</span><span style="--i:9">e</span>
+    </div>
+    <div class="boot-bar"><div class="boot-bar-fill"></div></div>
+  </div>
+</div>
 
 <!-- ===================== AUTH SCREEN ===================== -->
 <div id="auth-screen" class="centered-screen" style="display:none;">

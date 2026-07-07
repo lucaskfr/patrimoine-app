@@ -749,16 +749,86 @@ main {
 
 .loading-screen {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-serif); color: var(--navy); font-size: 1.1rem;
-  animation: loadingPulse 1.6s ease-in-out infinite;
+  position: relative; overflow: hidden;
+  background: var(--navy-deep);
 }
-@keyframes loadingPulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+
+.boot-grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(217,185,94,0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(217,185,94,0.08) 1px, transparent 1px);
+  background-size: 42px 42px;
+  animation: bootGridDrift 12s linear infinite;
+  mask-image: radial-gradient(circle at 50% 50%, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 0%, transparent 72%);
 }
+@keyframes bootGridDrift {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 42px 42px, 42px 42px; }
+}
+
+.boot-core {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 22px;
+  animation: bootFadeIn .6s ease both;
+}
+@keyframes bootFadeIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+
+.boot-ring { width: 108px; height: 108px; overflow: visible; }
+.boot-ring-track {
+  fill: none; stroke: rgba(217,185,94,0.18); stroke-width: 2;
+}
+.boot-ring-sweep {
+  fill: none; stroke: var(--gold-light); stroke-width: 2.5; stroke-linecap: round;
+  stroke-dasharray: 60 266; transform-origin: 60px 60px;
+  animation: bootSpin 2.2s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(217,185,94,0.65));
+}
+.boot-ring-sweep-2 {
+  stroke: var(--gold); stroke-dasharray: 40 210;
+  animation: bootSpinReverse 3.1s linear infinite;
+  opacity: .8;
+}
+@keyframes bootSpin { to { transform: rotate(360deg); } }
+@keyframes bootSpinReverse { to { transform: rotate(-360deg); } }
+.boot-mark { font-size: 30px; }
+
+.boot-title {
+  font-family: var(--font-serif); font-weight: 700; font-size: 1.6rem;
+  letter-spacing: 0.08em; color: var(--parchment);
+}
+.boot-title span {
+  display: inline-block;
+  animation: bootLetterIn .6s cubic-bezier(.16,1,.3,1) both;
+  animation-delay: calc(var(--i) * 0.055s);
+  text-shadow: 0 0 12px rgba(217,185,94,0.5);
+}
+@keyframes bootLetterIn {
+  from { opacity: 0; transform: translateY(10px); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+
+.boot-bar {
+  width: 160px; height: 3px; border-radius: 3px;
+  background: rgba(217,185,94,0.15); overflow: hidden;
+}
+.boot-bar-fill {
+  height: 100%; width: 40%; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--gold-light), transparent);
+  animation: bootBarSweep 1.3s ease-in-out infinite;
+}
+@keyframes bootBarSweep {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: opacity .2s ease; }
-  .loading-screen { animation: none; }
+  .boot-grid, .boot-core, .boot-ring-sweep, .boot-ring-sweep-2, .boot-title span, .boot-bar-fill {
+    animation: none !important;
+  }
+  .boot-title span { opacity: 1; filter: none; transform: none; }
 }
 
 /* ---------------- Abonnements récurrents ---------------- */
