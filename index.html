@@ -23,7 +23,7 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 
@@ -220,7 +220,7 @@
 <!-- ===================== APP ===================== -->
 <div id="app">
   <div class="topbar">
-    <div class="brand"><span class="mark">📒</span> Patrimoine</div>
+    <div class="brand" id="brand-logo"><span class="mark">📒</span> Patrimoine</div>
     <div class="topbar-actions">
       <button class="icon-btn" id="settings-btn" title="Personnaliser l'interface">⚙️</button>
       <button class="logout-btn" id="logout-btn">Déconnexion</button>
@@ -254,6 +254,19 @@
       <div class="card">
         <div class="card-title">Jalons</div>
         <div class="badges-grid" id="badges-grid"></div>
+      </div>
+
+      <div class="card" id="quests-card">
+        <div class="card-title-row">
+          <div class="card-title">🎯 Quêtes de la semaine</div>
+          <span class="hint" id="quests-week-label"></span>
+        </div>
+        <div id="quests-list"></div>
+      </div>
+
+      <div class="card-actions-row">
+        <button type="button" class="btn btn-outline" id="open-collection-btn">🎴 Ma collection</button>
+        <button type="button" class="btn btn-outline" id="open-wrapped-btn">🎁 Patrimoine Wrapped</button>
       </div>
 
       <div class="card-actions-row">
@@ -493,12 +506,56 @@
   </div>
 </div>
 
+<!-- ===================== MODAL : collection de cartes ===================== -->
+<div class="modal-overlay" id="collection-modal">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <h3>🎴 Ma collection</h3>
+      <button class="modal-close" id="collection-modal-close">&times;</button>
+    </div>
+    <p class="hint" id="collection-progress" style="margin-bottom:14px;"></p>
+    <div class="card-grid" id="card-grid"></div>
+  </div>
+</div>
+
+<!-- ===================== MODAL : détail d'une carte ===================== -->
+<div class="modal-overlay" id="card-detail-modal">
+  <div class="modal" style="max-width:340px; text-align:center;">
+    <div class="modal-head">
+      <h3>Carte</h3>
+      <button class="modal-close" id="card-detail-close">&times;</button>
+    </div>
+    <div id="card-detail-content"></div>
+  </div>
+</div>
+
+<!-- ===================== MODAL : Patrimoine Wrapped ===================== -->
+<div class="modal-overlay" id="wrapped-modal">
+  <div class="wrapped-stage">
+    <button class="wrapped-close" id="wrapped-close">&times;</button>
+    <div class="wrapped-progress" id="wrapped-progress-bar"></div>
+    <div class="wrapped-nav wrapped-nav-prev" id="wrapped-nav-prev"></div>
+    <div class="wrapped-nav wrapped-nav-next" id="wrapped-nav-next"></div>
+    <div class="wrapped-quarter-switch">
+      <button type="button" id="wrapped-quarter-prev">‹</button>
+      <span id="wrapped-quarter-label"></span>
+      <button type="button" id="wrapped-quarter-next">›</button>
+    </div>
+    <div class="wrapped-slides" id="wrapped-slides"></div>
+    <button type="button" class="btn btn-gold" id="wrapped-share-btn">📋 Copier en texte</button>
+  </div>
+</div>
+
+<div class="pixel-overlay" id="pixel-overlay">
+  <div class="pixel-badge">★ MODE RÉTRO ★</div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
